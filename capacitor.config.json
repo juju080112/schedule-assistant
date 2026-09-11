@@ -1,0 +1,17 @@
+{
+	"appId": "com.aitodo.app",
+	"appName": "日程助手",
+	"webDir": "www",
+	"plugins": {
+		"CapacitorHttp": {
+			"enabled": true
+		},
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon",
+			"iconColor": "#488AFF"
+		}
+	},
+	"android": {
+		"allowMixedContent": true
+	}
+}

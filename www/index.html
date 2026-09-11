@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>日程助手</title>
+  <!-- v1.8.0：首屏前应用主题，避免深色模式闪白 -->
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem('themeMode');
+        var m = raw ? JSON.parse(raw) : 'system';
+        var dark = m === 'dark' || (m !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="lib/pdf.min.js" defer></script>
+  <script src="lib/mammoth.browser.min.js" defer></script>
+</head>
+<body>
+  <!-- 页面：智能解析 -->
+  <div class="page" id="page-input">
+    <header class="header">
+      <h1>智能解析</h1>
+    </header>
+    <div class="content">
+      <textarea id="inputText" rows="7" placeholder="例如：&#10;明天下午3点和张总开会讨论Q4预算；周五前提交项目周报；10月1日提醒我给妈妈买生日礼物……&#10;&#10;也可以直接粘贴会议纪要、聊天记录等"></textarea>
+      <div class="attach-row">
+        <button class="btn-icon" id="btnPickImage" title="选择图片">🖼️ 图片</button>
+        <button class="btn-icon" id="btnPickFile" title="选择文件">📄 文件</button>
+        <input type="file" id="fileImage" accept="image/*" hidden>
+        <input type="file" id="fileDoc" accept=".pdf,.docx,.txt,.md,.csv,.json" hidden>
+      </div>
+      <div id="attachList" class="attach-list"></div>
+      <button class="btn-primary" id="btnParse">✨ AI 生成日程事项</button>
+      <div id="parseStatus" class="status"></div>
+      <div id="parseResult" class="result-card" hidden>
+        <h3>解析结果</h3>
+        <div id="resultTodos"></div>
+        <div class="result-actions">
+          <button class="btn-primary" id="btnSaveResult">✔ 保存到日程</button>
+          <button class="btn-ghost" id="btnDiscardResult">丢弃</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 页面：日程（含待办事项） -->
+  <div class="page active" id="page-schedule">
+    <header class="header">
+      <h1>日程</h1>
+    </header>
+    <div class="content">
+      <div id="courseScheduleBlock" hidden>
+        <div class="date-head">本周课程</div>
+        <div id="courseScheduleList" class="list"></div>
+      </div>
+      <div id="scheduleList" class="list"></div>
+      <div id="unschedBlock" hidden>
+        <div class="date-head">待安排</div>
+        <div id="unschedList" class="list"></div>
+      </div>
+      <div id="doneBlock" hidden>
+        <div class="date-head">已完成（<span id="doneCount">0</span>）<button class="done-clear" id="btnClearDone">一键清理</button></div>
+        <div id="doneList" class="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 页面：课程表（v1.7.3，MyUSTC 式周课表网格） -->
+  <div class="page" id="page-coursetable">
+    <header class="header ct-header">
+      <h1>课程表</h1>
+      <button class="ct-sync" id="btnCtSync" type="button">🔄 同步</button>
+    </header>
+    <div class="content ct-content">
+      <div class="ct-weekbar">
+        <button class="ct-nav" id="ctPrev" type="button">‹ 上一周</button>
+        <div class="ct-weeklabel" id="ctWeekLabel">—</div>
+        <button class="ct-nav" id="ctNext" type="button">下一周 ›</button>
+        <button class="ct-now" id="ctNow" type="button">本周</button>
+      </div>
+      <div class="ct-grid" id="ctGrid"></div>
+    </div>
+  </div>
+
+  <!-- 页面：AI 助手（v1.5.0） -->
+  <div class="page" id="page-chat">
+    <header class="header">
+      <h1>AI 助手</h1>
+      <button class="chat-clear" id="btnChatClear">新对话</button>
+    </header>
+    <div id="chatList" class="chat-list"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="例如：明天下午3点提醒我交作业" autocomplete="off">
+      <button id="btnChatSend">➤</button>
+    </div>
+  </div>
+
+  <!-- 页面：设置（v1.6.0 主菜单 + 全屏子页） -->
+  <div class="page" id="page-settings">
+    <header class="header">
+      <h1>设置</h1>
+    </header>
+    <div class="content">
+      <div class="form-group">
+        <label>外观</label>
+        <div class="seg" id="themeSeg">
+          <button class="seg-btn" data-mode="light" type="button">浅色</button>
+          <button class="seg-btn" data-mode="dark" type="button">深色</button>
+          <button class="seg-btn" data-mode="system" type="button">跟随系统</button>
+        </div>
+      </div>
+      <div class="set-menu">
+        <button class="set-link" data-sub="ai" type="button"><span class="set-ico">✨</span><span class="set-name">AI 配置</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="course" type="button"><span class="set-ico">📚</span><span class="set-name">课表同步</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="notify" type="button"><span class="set-ico">🔔</span><span class="set-name">通知与提醒</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
+      </div>
+      <p class="version">日程助手 v1.8.14</p>
+    </div>
+  </div>
+
+  <!-- 底部导航 -->
+  <nav class="tabbar">
+    <button class="tab active" data-page="page-schedule"><span class="tab-icon">⏰</span>日程</button>
+    <button class="tab" data-page="page-input"><span class="tab-icon">✨</span>解析</button>
+    <button class="tab" data-page="page-coursetable"><span class="tab-icon">📅</span>课程表</button>
+    <button class="tab" data-page="page-chat"><span class="tab-icon">💬</span>AI助手</button>
+    <button class="tab" data-page="page-settings"><span class="tab-icon">⚙️</span>设置</button>
+  </nav>
+
+  <!-- 详情面板 -->
+  <div id="detailMask" class="mask" hidden>
+    <div class="sheet">
+      <div class="sheet-header">
+        <h3>详情</h3>
+        <button class="del" id="detailClose">✕</button>
+      </div>
+      <div class="form-group">
+        <label>标题</label>
+        <input type="text" id="dTitle">
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="dDetail" rows="3"></textarea>
+      </div>
+      <div class="form-group">
+        <label>提醒时间（清空则不设提醒）</label>
+        <input type="datetime-local" id="dDue">
+      </div>
+      <div class="form-group" id="dSrcGroup" hidden>
+        <label>原始来源</label>
+        <button class="btn-ghost" id="dSrcView" type="button" style="margin-top:0">查看原文件</button>
+      </div>
+      <div class="form-group">
+        <label>创建时间</label>
+        <p class="hint" id="dCreated"></p>
+      </div>
+      <button class="btn-primary" id="dSave">保存修改</button>
+      <button class="btn-ghost" id="dToggleDone">标记完成</button>
+      <div class="danger-zone">
+        <button class="btn-danger" id="dDelete">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置子页（全屏，点空白处或系统返回键回设置主页） -->
+  <div id="settingsSub" class="mask" hidden>
+    <div class="sheet">
+      <div class="sheet-header">
+        <h3 id="subTitle">设置</h3>
+      </div>
+      <div class="sub-pane" data-sub="ai">
+        <div class="form-group">
+          <label>智谱 API Key <span class="req">*必填</span></label>
+          <input type="password" id="setApiKey" placeholder="请填入 open.bigmodel.cn 的 API Key">
+        </div>
+        <div class="form-group">
+          <label>文本模型</label>
+          <select id="setTextModel">
+            <option value="glm-4-flash">glm-4-flash（免费，推荐）</option>
+            <option value="glm-4-air">glm-4-air（更快更强，付费）</option>
+            <option value="glm-4-plus">glm-4-plus（旗舰，付费）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>图片理解模型</label>
+          <select id="setVisionModel">
+            <option value="glm-4v-flash">glm-4v-flash（免费，推荐）</option>
+            <option value="glm-4v-plus">glm-4v-plus（旗舰，付费）</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btnSaveSettings">保存设置</button>
+        <button class="btn-ghost" id="btnTestApi">测试 API 连通性</button>
+        <div id="settingsStatus" class="status"></div>
+      </div>
+      <div class="sub-pane" data-sub="course" hidden>
+        <div class="privacy-note">
+          <b>隐私说明</b>
+          <p>本功能不收集、不存储、不传输你的教务系统账号密码。登录在系统浏览器内核中由你亲手完成，应用只读取登录后的课表页面内容，解析结果仅保存在本机。登录状态仅保留在本机浏览器内核中、仅供每天自动同步复用，不会发往学校服务器以外的任何地方；可在「清除本地课表数据」时一并清除。</p>
+        </div>
+        <div id="courseStatus" class="status"></div>
+
+        <div class="form-group">
+          <label>已同步课表</label>
+          <div id="courseListPreview" class="course-preview"></div>
+        </div>
+
+        <div class="form-group">
+          <label>提醒设置</label>
+          <div class="switch-row">
+            <div class="switch-label">
+              <b>在日程页显示课程</b>
+            </div>
+            <label class="switch"><input type="checkbox" id="setCourseInSchedule" checked><span class="slider"></span></label>
+          </div>
+          <div class="switch-row">
+            <div class="switch-label">
+              <b>并入常驻日程栏</b>
+            </div>
+            <label class="switch"><input type="checkbox" id="setCourseInBar" checked><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div class="danger-zone">
+          <button class="btn-danger" id="btnCourseClear" type="button">清除本地课表数据</button>
+        </div>
+      </div>
+      <div class="sub-pane" data-sub="notify" hidden>
+        <div class="switch-row">
+          <div class="switch-label">
+            <b>常驻今日日程栏</b>
+          </div>
+          <label class="switch"><input type="checkbox" id="setTodayBar" checked><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="sub-pane" data-sub="guide" hidden>
+        <div class="guide-status" id="guideStatus">正在检查权限…</div>
+
+        <div class="guide-sec">
+          <h4>为什么要做这些设置</h4>
+          <p>本应用的日程与课程提醒、常驻日程栏、每天早上自动同步课表，都依赖系统允许它在后台运行。手机厂商的省电策略默认会比较严格，按下面几步放行后，提醒才能准点到。</p>
+        </div>
+
+        <div class="guide-sec">
+          <h4>第一步 · 按手机品牌放行后台</h4>
+          <div id="guideBrandBox"></div>
+        </div>
+
+        <div class="guide-sec">
+          <h4>第二步 · 课程表同步怎么用</h4>
+          <ol class="guide-list">
+            <li>打开「课程表」页，点右上角 <b>同步</b>；</li>
+            <li>在弹出的窗口里<b>亲手完成学校统一身份认证登录</b>（账号密码不经过本应用）；</li>
+            <li>登录后会自动读取课表并保存到本机，稍等片刻即回到课表页。</li>
+          </ol>
+          <p>之后每天 06:30 会自动同步一次并续排提醒，无需再手动操作；登录过期时会通知你重新同步一次。</p>
+        </div>
+
+        <div class="guide-sec">
+          <h4>提醒什么时候来</h4>
+          <ul class="guide-list">
+            <li>日程与课程：<b>开始时准点提醒</b>，并在<b>开始前 1 小时</b>预提醒一次；</li>
+            <li>排程范围为「当天 + 往后 3 天」，每天自动滚动续排；</li>
+            <li>待办事项没有时间就不会提醒，可在详情里补上提醒时间。</li>
+          </ul>
+        </div>
+
+        <div class="guide-sec">
+          <h4>怎么快速加日程</h4>
+          <ul class="guide-list">
+            <li>「解析」页：粘贴聊天记录、上传图片或文件，AI 自动拆成日程事项；</li>
+            <li>「AI 助手」页：直接用一句话增删改查，例如「明天下午 3 点提醒我交作业」；</li>
+            <li>同一条活动重复发两次也没关系，会自动合并成一条，详情取两次的结合。</li>
+          </ul>
+        </div>
+
+        <div class="guide-sec">
+          <h4>课程表怎么用</h4>
+          <ul class="guide-list">
+            <li>左右翻看不同周次，课表会按教务的周次数据变化；</li>
+            <li>点课程块看时间、地点、教师；</li>
+            <li>卡片左上角圆圈 = 这节课已完成（不再提醒），右上角叉 = 移除当天这一节（不影响课表数据）。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="sub-pane" data-sub="data" hidden>
+        <div class="danger-zone">
+          <button class="btn-danger" id="btnClearData">清空所有数据</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 课程详情面板（只读） -->
+  <div id="courseMask" class="mask" hidden>
+    <div class="sheet">
+      <div class="sheet-header">
+        <h3 id="cdTitle">课程详情</h3>
+        <button class="del" id="courseClose">✕</button>
+      </div>
+      <div id="cdBody" class="cd-body"></div>
+    </div>
+  </div>
+
+  <!-- 原始来源查看（v1.8.7：日程详情 → 查看原文件） -->
+  <div id="srcMask" class="mask" hidden>
+    <div class="sheet">
+      <div class="sheet-header">
+        <h3>原始来源</h3>
+        <button class="del" id="srcClose">✕</button>
+      </div>
+      <div id="srcBody" class="src-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="lib/plugins.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/course.js" defer></script>
+</body>
+</html>

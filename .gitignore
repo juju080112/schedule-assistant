@@ -1,0 +1,35 @@
+# ===== 依赖与构建产物 =====
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/capacitor-cordova-android-plugins/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# ===== 签名与密钥（绝对不要提交）=====
+*.keystore
+*.jks
+keystore.properties
+android/keystore.properties
+android/app/*.keystore
+
+# ===== 本机配置 =====
+android/local.properties
+local.properties
+.idea/
+*.iml
+.gradle/
+.DS_Store
+Thumbs.db
+
+# ===== 编辑器/系统临时文件 =====
+.vscode/
+*.log
+*.tmp
+*.bak
+*~
