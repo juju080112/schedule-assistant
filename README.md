@@ -147,7 +147,14 @@ cp android/keystore.properties.example android/keystore.properties
 ```
 
 ### 自动构建
-仓库内置 GitHub Actions 工作流 [`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)：每次 push 到 `main`、或手动触发时自动构建 APK 作为构建产物（Artifacts）上传；推送 `v*` 标签时会自动创建 Release 并附加 APK。
+仓库内置 GitHub Actions 工作流 [`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)：每次 push 到 `main`、或手动触发时自动构建 APK 作为构建产物（Artifacts）上传；推送 `v*` 标签时会自动创建 Release 并附加 APK（未配置签名 Secrets 时产物标记为 `-debug-signed` 且不会附加到 Release）。
+
+### 逻辑自检（无需手机）
+仓库自带一个不依赖浏览器与手机的测试台：它在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、单双周、课程时段、展开幂等、完成状态保持、删除后不复活、空课表健壮性等 31 项）：
+
+```bash
+node tools/course-logic-test.js
+```
 
 ## 项目结构
 
@@ -298,7 +305,14 @@ cd android && ./gradlew assembleRelease   # Windows: gradlew.bat assembleRelease
 
 Output: `android/app/build/outputs/apk/release/app-release.apk`. The repo ships **no signing key**; without one the release build falls back to debug signing. Copy `android/keystore.properties.example` to `android/keystore.properties` to use your own.
 
-A GitHub Actions workflow ([`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)) builds the APK on every push to `main` and attaches it to a Release when a `v*` tag is pushed.
+A GitHub Actions workflow ([`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)) builds the APK on every push to `main` and attaches it to a Release when a `v*` tag is pushed (if no signing secrets are configured, the artifact is named `-debug-signed` and is **not** attached to the Release).
+
+### Logic self-test (no device needed)
+The repo ships a test harness that stubs the DOM/plugins in Node and loads the **real** `www/js/course.js`, asserting 31 cases around the timetable and academic-calendar logic (current week and make-up-class detection, holiday suspension, odd/even weeks, lesson times, idempotent expansion, completion persistence, no resurrection after deletion, empty-timetable robustness):
+
+```bash
+node tools/course-logic-test.js
+```
 
 ## Adapting to another university
 
