@@ -338,59 +338,9 @@
     return true;
   }
 
-  function occurrenceOn(course, dateObj, term) {
-    if (!course || !course.weekday || !course.startSlot) return null;
-    if (isHoliday(dateObj, term)) return null;
-    var wn = weekNoOf(dateObj, term);
-    if (wn < 1 || wn > (term.totalWeeks || 20)) return null;
-    var wd = effectiveWeekday(dateObj, term);
-    if (course.weekday !== wd) return null;
-    /* 周次为空视为每周都上 */
-    if (course.weeks && course.weeks.length && course.weeks.indexOf(wn) < 0) return null;
-    var endSlot = course.endSlot && course.endSlot >= course.startSlot ? course.endSlot : course.startSlot;
-    var start = slotStartTs(dateObj, course.startSlot);
-    if (start == null) return null;
-    return {
-      course: course,
-      date: startOfDay(dateObj),
-      weekNo: wn,
-      startTs: start,
-      endTs: slotEndTs(dateObj, endSlot) || (start + SLOT_MINUTES * 60000),
-      startSlot: course.startSlot,
-      endSlot: endSlot
-    };
-  }
-
-  /* 区间内全部课程 occurrence，按开始时间升序（已永久关闭的不出现） */
-  function occurrencesBetween(startTs, endTs) {
-    var s = getSettings();
-    if (!s.enabled || !s.showInSchedule) return [];
-    var term = getTerm();
-    var list = getList();
-    if (!list.length) return [];
-    var closed = getClosedMap();
-    var out = [];
-    var d = new Date(startTs);
-    d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    var guard = 0;
-    while (d.getTime() <= endTs && guard++ < 400) {
-      for (var i = 0; i < list.length; i++) {
-        var oc = occurrenceOn(list[i], d, term);
-        if (oc && !closed[occKeyOf(oc)]) out.push(oc);
-      }
-      d = new Date(d.getTime() + 86400000);
-    }
-    out.sort(function (a, b) { return a.startTs - b.startTs || a.startSlot - b.startSlot; });
-    return out;
-  }
-
-  /* 今天的课程（供常驻栏与日程页头部使用） */
-  function todayOccurrences() {
-    var s = getSettings();
-    if (!s.enabled) return [];
-    var now = new Date();
-    return occurrencesBetween(startOfDay(now), startOfDay(now) + 86400000 - 1);
-  }
+  /* v1.8.18：原 occurrenceOn / occurrencesBetween / todayOccurrences 已废弃删除——
+     课程改为「实体化独立日程」后，日程与常驻栏都直接读 todos，
+     课表网格与 AI 接口分别用 renderCourseTable / getWeekPlan，无需再动态展开 occurrence。 */
 
   /* ============ 解析报告归一化 ============ */
   function normalizeCourse(c, idx) {
@@ -767,11 +717,6 @@
     var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(s || ''));
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
   }
-  function ctMondayOf(d) {
-    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); /* 周一=0 偏移 */
-    return x;
-  }
   function ctColorOf(name) {
     var h = 0;
     for (var i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -1050,8 +995,6 @@
     getWeekPlan: getWeekPlan,
     getCourseSessions: getCourseSessions,
     getSyncStatus: getSyncStatus,
-    occurrencesBetween: occurrencesBetween,
-    todayOccurrences: todayOccurrences,
     rollSessions: rollSessions,              /* v1.8.12：把课表展开成独立日程（含 v1.8.14 对账） */
     syncSessions: syncSessions,              /* v1.8.14：课表变动后对账（更新/删除/补建） */
     pullNativeState: pullNativeState,        /* v1.8.14：采纳原生后台同步结果 */
