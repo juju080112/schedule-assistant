@@ -48,6 +48,7 @@
 - 点课程表页**右上角「同步」** → 弹出教务窗口，**你在窗口里亲手完成统一身份认证** → 自动读取课表
 - 渲染成 13 节 × 7 天的周课表网格，可翻周、本周高亮、点课程块看时间/地点/教师/日期
 - **逐周正确**：按教务返回的周次数据展开（含单双周），不同周次的课不同
+- **遵循官方校历**：调课日与放假日会标注在日期旁（如 `9/20 · 补周五课`、`9/25 · 休`），课程表、日程与提醒三者一致
 - **每节课独立成条**：可单独完成、单独删除；课表临时调整后重新同步会**自动对账**（时间地点变化就地更新、取消的删除、新增的补建）
 - 每天定时后台静默同步一次并滚动续排未来 3 天的提醒
 
@@ -244,6 +245,7 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 - Tap **Sync** at the top-right of the Timetable page; log in **by hand** inside the opened window
 - Rendered as a 13-period × 7-day weekly grid with week navigation, today highlight and per-block details
 - **Correct per week**: expanded from the week data returned by the registrar (odd/even weeks included)
+- **Follows the official academic calendar**: make-up and holiday days are labelled next to the date (e.g. `9/20 · 补周五课`, `9/25 · 休`), keeping the grid, schedule and reminders consistent
 - **One independent event per session**: complete or delete them individually; after a timetable change a re-sync **reconciles** (updates moved sessions, removes cancelled ones, adds new ones)
 - A daily background sync keeps the next 3 days of reminders rolling
 

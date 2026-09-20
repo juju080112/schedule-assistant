@@ -512,6 +512,11 @@ textarea { resize: none; line-height: 1.6; }
   font-size: 12px; font-weight: 600; color: var(--text);
 }
 .ct-dayhead small { display: block; font-size: 9px; color: var(--text-sub); font-weight: 400; }
+/* v1.8.15：调课 / 放假日标记（课程表与日程、提醒保持一致） */
+.ct-dayhead small .ct-mark { color: var(--warn); font-weight: 600; }
+.ct-dayhead small .ct-off { color: var(--danger); font-weight: 600; }
+.ct-day.ct-holiday { background: var(--bg-press); }
+.ct-day.ct-holiday .ct-dayhead { color: var(--text-sub); }
 .ct-today { background: var(--ct-today-bg); }
 .ct-today .ct-dayhead { color: var(--primary); }
 .ct-daybody { position: relative; height: 598px; }

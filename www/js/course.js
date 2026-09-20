@@ -18,12 +18,16 @@
     label: '2026-2027学年 秋季学期',
     week1Sunday: '2026-08-30',   // 第 1 教学周的周日（周次计算锚点）
     totalWeeks: 20,              // 共 20 教学周，2027-01-15 结束
-    /* 调课：该日期按指定星期的课表上课（值=星期 1~7） */
+    /* 调课：该日期按指定星期的课表上课（值=星期 1~7）
+       来源：教务处《2026年秋季学期教学日历》+《关于2026年中秋节、国庆节放假的通知》
+       https://www.teach.ustc.edu.cn/calendar/20135.html
+       https://www.ustc.edu.cn/info/1364/25670.htm */
     overrides: {
-      '2026-09-20': 5,           // 校庆，周日补周五课
-      '2026-10-10': 2            // 周六补周二课
+      '2026-09-20': 5,           // 校庆；通知原文「9月20日上星期五的课」
+      '2026-10-10': 2            // 通知原文「10月10日上星期二的课」
     },
-    /* 放假：该日期全天无课（仅工作日取消需要列出，周末本就无课） */
+    /* 放假：该日期全天无课（仅工作日取消需要列出，周末本就无课）
+       9/25(中秋)~9/27、10/1~10/7 放假；2027/1/1~1/3 元旦放假 */
     holidays: [
       '2026-09-25',              // 中秋节（周五）
       '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07', // 国庆
@@ -69,9 +73,21 @@
   }
   function saveSettings(s) { store.set(K_SET, s); }
 
+  /* v1.8.15：内置校历（调课/放假）必须能覆盖到已安装的设备。
+     早期版本存下的 K_TERM 里没有 overrides/holidays，若原样返回就会漏掉调课与放假，
+     导致「课表上有课、日程里没有」。这里把内置规则合并进已存校历，同时保留
+     同步来的 week1Sunday / totalWeeks / label（它们以教务页面校准值为准）。 */
   function getTerm() {
+    var base = JSON.parse(JSON.stringify(DEFAULT_TERM));
     var t = store.get(K_TERM, null);
-    return t && t.week1Sunday ? t : JSON.parse(JSON.stringify(DEFAULT_TERM));
+    if (!t || !t.week1Sunday) return base;
+    var merged = Object.assign({}, base, t);
+    /* 调课规则以「内置官方校历」为准（值来自教务处教学日历与放假通知），已存校历只作补充 */
+    merged.overrides = Object.assign({}, t.overrides || {}, base.overrides);
+    var hol = (base.holidays || []).slice();
+    (t.holidays || []).forEach(function (k) { if (hol.indexOf(k) < 0) hol.push(k); });
+    merged.holidays = hol;
+    return merged;
   }
   function saveTerm(t) { store.set(K_TERM, t); }
 
@@ -803,7 +819,7 @@
     return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
   }
 
-  function showCourseBlockDetail(c, weekNo) {
+  function showCourseBlockDetail(c, weekNo, dayKeyStr) {
     var mask = document.getElementById('courseMask');
     if (!mask || !c) return;
     var title = document.getElementById('cdTitle');
@@ -813,11 +829,23 @@
     var te = SLOT_START[c.endSlot - 1] || ts;
     var endMin = te[0] * 60 + te[1] + 45;
     var weeksTxt = (c.weeks && c.weeks.length) ? (c.weeks[0] + '-' + c.weeks[c.weeks.length - 1] + ' 周') : '全部周';
-    var sd = sessionDate(c, weekNo);
+    var wchar = ['', '一', '二', '三', '四', '五', '六', '日'];
+    var term = getTerm();
+    /* 格子里那一列的实际日期（可能是调课日），没有则退回按课程常规星期推算 */
+    var dayDate = dayKeyStr ? ctParseDate(dayKeyStr) : sessionDate(c, weekNo);
+    var mark = '';
+    if (dayDate) {
+      if (isHoliday(dayDate, term)) mark = '放假停课';
+      else {
+        var eff = effectiveWeekday(dayDate, term);
+        if (eff !== isoWeekday(dayDate)) mark = '补周' + wchar[eff] + '课（调课）';
+      }
+    }
     if (body) {
       body.innerHTML = '<pre class="diag-pre">' + escapeHtml(
         '课程：' + (c.name || '') + '\n' +
-        '日期：' + (sd ? fmtYMD(sd) + '（周' + ['日', '一', '二', '三', '四', '五', '六'][c.weekday] + '·第 ' + weekNo + ' 周）' : '—') + '\n' +
+        '日期：' + (dayDate ? fmtYMD(dayDate) + '（周' + wchar[isoWeekday(dayDate)] + '·第 ' + weekNo + ' 周' + (mark ? '·' + mark : '') + '）' : '—') + '\n' +
+        '常规星期：周' + wchar[c.weekday] + '\n' +
         '节次：第 ' + c.startSlot + ' - ' + c.endSlot + ' 节\n' +
         '时间：' + ts[0] + ':' + ctPad2(ts[1]) + ' - ' + Math.floor(endMin / 60) + ':' + ctPad2(endMin % 60) + '\n' +
         '地点：' + (c.location || '—') + '\n' +
@@ -870,6 +898,7 @@
     var todayKey = now.getFullYear() + '-' + now.getMonth() + '-' + now.getDate();
 
     var dowNames = ['一', '二', '三', '四', '五', '六', '日'];
+    var weekChar = ['', '一', '二', '三', '四', '五', '六', '日'];
     var html = '<div class="ct-timecol"><div class="ct-corner">' + (mon.getMonth() + 1) + '月</div>';
     for (var s = 1; s <= 13; s++) {
       var st = SLOT_START[s - 1];
@@ -879,20 +908,34 @@
     for (var d = 1; d <= 7; d++) {
       /* 周一~周六 = 本周周日 + d 天；周日 = 本周周日当天 */
       var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + (d === 7 ? 0 : d));
+      var dayKey = dateKey(dayDate);
+      /* v1.8.15：课程表也要遵循官方调课与放假，才能和日程/提醒一致
+         例：2026-09-20（周日）校庆补周五课；2026-09-25（周五）中秋放假 */
+      var off = isHoliday(dayDate, term);
+      var eff = effectiveWeekday(dayDate, term);
+      var natural = isoWeekday(dayDate);
+      var mark = '', markCls = '';
+      if (off) { mark = '休'; markCls = 'ct-off'; }
+      else if (eff !== natural) { mark = '补周' + weekChar[eff] + '课'; markCls = 'ct-mark'; }
       var isToday = (dayDate.getFullYear() + '-' + dayDate.getMonth() + '-' + dayDate.getDate()) === todayKey;
-      html += '<div class="ct-day' + (isToday ? ' ct-today' : '') + '">'
-        + '<div class="ct-dayhead">' + dowNames[d - 1] + '<small>' + (dayDate.getMonth() + 1) + '/' + dayDate.getDate() + '</small></div>'
+      html += '<div class="ct-day' + (isToday ? ' ct-today' : '') + (off ? ' ct-holiday' : '') + '">'
+        + '<div class="ct-dayhead">' + dowNames[d - 1]
+        + '<small>' + (dayDate.getMonth() + 1) + '/' + dayDate.getDate()
+        + (mark ? '<span class="' + markCls + '"> · ' + mark + '</span>' : '')
+        + '</small></div>'
         + '<div class="ct-daybody">';
-      list.forEach(function (c, idx) {
-        if (!c || c.weekday !== d) return;
-        if (c.weeks && c.weeks.length && c.weeks.indexOf(view) < 0) return;
-        var top = (c.startSlot - 1) * CT_ROW_H;
-        var h = (c.endSlot - c.startSlot + 1) * CT_ROW_H - 3;
-        html += '<div class="ct-block" style="top:' + top + 'px;height:' + h + 'px;background:' + ctColorOf(c.name) + '" data-idx="' + idx + '">'
-          + '<span class="ct-bname">' + escapeHtml(c.name) + '</span>'
-          + (c.location ? '<span class="ct-broom">@' + escapeHtml(c.location) + '</span>' : '')
-          + '</div>';
-      });
+      if (!off) {
+        list.forEach(function (c, idx) {
+          if (!c || c.weekday !== eff) return;   /* 按「调课后的实际星期」排课 */
+          if (c.weeks && c.weeks.length && c.weeks.indexOf(view) < 0) return;
+          var top = (c.startSlot - 1) * CT_ROW_H;
+          var h = (c.endSlot - c.startSlot + 1) * CT_ROW_H - 3;
+          html += '<div class="ct-block" style="top:' + top + 'px;height:' + h + 'px;background:' + ctColorOf(c.name) + '" data-idx="' + idx + '" data-day="' + dayKey + '">'
+            + '<span class="ct-bname">' + escapeHtml(c.name) + '</span>'
+            + (c.location ? '<span class="ct-broom">@' + escapeHtml(c.location) + '</span>' : '')
+            + '</div>';
+        });
+      }
       html += '</div></div>';
     }
     html += '</div>';
@@ -901,7 +944,7 @@
     var blocks = grid.querySelectorAll('.ct-block');
     Array.prototype.forEach.call(blocks, function (el) {
       el.addEventListener('click', function () {
-        showCourseBlockDetail(list[+el.getAttribute('data-idx')], view);
+        showCourseBlockDetail(list[+el.getAttribute('data-idx')], view, el.getAttribute('data-day'));
       });
     });
   }
