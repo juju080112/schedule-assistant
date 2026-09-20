@@ -1065,13 +1065,28 @@ const CHAT_TOOLS = [
   { type: 'function', function: { name: 'delete_todo', description: '删除事项', parameters: { type: 'object', properties: { id: { type: 'number' }, title: { type: 'string' } }, required: [] } } },
   { type: 'function', function: { name: 'clear_completed', description: '清空所有已完成事项', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'set_today_bar', description: '开启或关闭通知栏/锁屏的常驻今日日程栏', parameters: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'] } } },
-  { type: 'function', function: { name: 'get_stats', description: '获取事项数量统计', parameters: { type: 'object', properties: {} } } }
+  { type: 'function', function: { name: 'get_stats', description: '获取事项数量统计', parameters: { type: 'object', properties: {} } } },
+  /* v1.8.16：开放课表等全部数据读取权限 */
+  { type: 'function', function: { name: 'get_timetable', description: '读取已同步的整学期课程表（每周固定课表：课程名、教师、地点、星期、节次、上课时间、周次）', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_week_plan', description: '读取某一教学周的完整安排（每天的实际星期、是否放假/调课、当天课程）。不传 weekNo 则为当前周', parameters: { type: 'object', properties: { weekNo: { type: 'number', description: '教学周序号，如 4' } }, required: [] } } },
+  { type: 'function', function: { name: 'get_course_sessions', description: '读取已展开成日程的课程节次（含具体日期、时间、是否已完成），默认未来 4 天', parameters: { type: 'object', properties: { days: { type: 'number', description: '往前看几天，1~30，默认 4' } }, required: [] } } },
+  { type: 'function', function: { name: 'get_term_info', description: '读取校历信息：学期名、第1周周日、总周数、当前第几周、今天实际星期、是否调课/放假、调课与放假日期表', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_app_status', description: '读取课表同步状态：课表数量、上次同步时间、上次抓取地址、课表开关设置', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_settings_info', description: '读取当前设置（AI 模型、常驻栏开关等；出于安全不返回 API Key）', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_todo_detail', description: '读取单条事项的完整内容（备注、时间、创建时间、是否有原始来源）', parameters: { type: 'object', properties: { id: { type: 'number' }, title: { type: 'string', description: '模糊匹配用' } }, required: [] } } },
+  { type: 'function', function: { name: 'search_schedule', description: '在全部日程与课程表中按关键词搜索（课程名/教师/地点/备注）', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'complete_course_session', description: '把某一天的某节课标记为已完成（按日期+课程名精确定位，避免同名课程改错）', parameters: { type: 'object', properties: { date: { type: 'string', description: '日期 YYYY-MM-DD' }, courseName: { type: 'string', description: '课程名，可用关键词（如「心理学」）' } }, required: ['date', 'courseName'] } } },
+  { type: 'function', function: { name: 'delete_course_session', description: '删除某一天的某节课（按日期+课程名精确定位；删除后不再重新生成也不会提醒）', parameters: { type: 'object', properties: { date: { type: 'string', description: '日期 YYYY-MM-DD' }, courseName: { type: 'string', description: '课程名或关键词' } }, required: ['date', 'courseName'] } } }
 ];
 
 const CHAT_TOOL_LABELS = {
   list_todos: '查看日程', add_todo: '添加事项', update_todo: '修改事项',
   complete_todo: '标记完成', reopen_todo: '恢复未完成', delete_todo: '删除事项',
-  clear_completed: '清空已完成', set_today_bar: '设置常驻栏', get_stats: '统计'
+  clear_completed: '清空已完成', set_today_bar: '设置常驻栏', get_stats: '统计',
+  get_timetable: '读取课表', get_week_plan: '读取周计划', get_course_sessions: '读取课程日程',
+  get_term_info: '读取校历', get_app_status: '读取同步状态', get_settings_info: '读取设置',
+  get_todo_detail: '读取事项详情', search_schedule: '搜索日程',
+  complete_course_session: '完成某节课', delete_course_session: '删除某节课'
 };
 
 const CHAT_ACTIONS = {
@@ -1188,18 +1203,159 @@ const CHAT_ACTIONS = {
       overdue: active.filter((t) => t.due && t.due < Date.now()).length,
       unscheduled: active.filter((t) => !t.due).length
     });
+  },
+
+  /* ===== v1.8.16：课表与全量数据读取 ===== */
+  async get_timetable() {
+    const cs = window.CourseSync;
+    if (!cs || !cs.getTimetable) return JSON.stringify({ ok: false, error: '课表模块未就绪' });
+    const list = cs.getTimetable();
+    return JSON.stringify({
+      ok: true, count: list.length,
+      term: cs.getTermInfo ? cs.getTermInfo() : null,
+      courses: list,
+      note: list.length ? undefined : '尚未同步课表：请到「课程表」页点右上角「同步」并在窗口内登录教务系统'
+    });
+  },
+  async get_week_plan({ weekNo }) {
+    const cs = window.CourseSync;
+    if (!cs || !cs.getWeekPlan) return JSON.stringify({ ok: false, error: '课表模块未就绪' });
+    return JSON.stringify(cs.getWeekPlan(weekNo));
+  },
+  async get_course_sessions({ days }) {
+    const cs = window.CourseSync;
+    if (!cs || !cs.getCourseSessions) return JSON.stringify({ ok: false, error: '课表模块未就绪' });
+    return JSON.stringify(cs.getCourseSessions(days));
+  },
+  async get_term_info() {
+    const cs = window.CourseSync;
+    if (!cs || !cs.getTermInfo) return JSON.stringify({ ok: false, error: '课表模块未就绪' });
+    return JSON.stringify({ ok: true, term: cs.getTermInfo() });
+  },
+  async get_app_status() {
+    const cs = window.CourseSync;
+    return JSON.stringify({
+      ok: true,
+      course: (cs && cs.getSyncStatus) ? cs.getSyncStatus() : null,
+      todayBar: !!(getSettings().todayBarEnabled),
+      todoCount: getTodos().length
+    });
+  },
+  async get_settings_info() {
+    const s = getSettings();
+    return JSON.stringify({
+      ok: true,
+      textModel: s.textModel, visionModel: s.visionModel,
+      hasApiKey: !!s.apiKey, todayBarEnabled: s.todayBarEnabled !== false,
+      note: '出于安全，API Key 不返回'
+    });
+  },
+  async get_todo_detail({ id, title }) {
+    const todos = getTodos();
+    const t = id != null ? todos.find((x) => x.id === id) : findByTitle(todos, title);
+    if (!t) return JSON.stringify({ ok: false, error: '未找到该事项' });
+    return JSON.stringify({
+      ok: true,
+      todo: {
+        id: t.id, title: t.title, detail: t.detail || '', done: !!t.done,
+        due: t.due ? fmtDate(t.due) : null, dueTs: t.due || null,
+        createdAt: fmtDate(t.createdAt),
+        remind: !!t.remind, notifyId: t.notifyId || null,
+        isCourseSession: !!t.courseKey, courseKey: t.courseKey || null,
+        hasSources: !!(t.srcs && t.srcs.length),
+        sourceKinds: (t.srcs || []).map((s) => s.kind + ':' + (s.name || ''))
+      }
+    });
+  },
+  async search_schedule({ query }) {
+    const q = String(query || '').toLowerCase();
+    if (!q) return JSON.stringify({ ok: false, error: '请提供关键词' });
+    const todos = getTodos().filter((t) =>
+      (t.title || '').toLowerCase().includes(q) || (t.detail || '').toLowerCase().includes(q));
+    const cs = window.CourseSync;
+    const courses = (cs && cs.getTimetable ? cs.getTimetable() : []).filter((c) =>
+      [c.name, c.teacher, c.location].some((v) => String(v || '').toLowerCase().includes(q)));
+    return JSON.stringify({
+      ok: true,
+      todos: todos.map(todoBrief),
+      courses: courses,
+      note: courses.length ? '课程条目即为课表；其每日节次可在日程中查看或调 get_course_sessions' : undefined
+    });
+  },
+
+  /* ===== v1.8.17：按「日期 + 课程名」精确操作某节课 ===== */
+  async complete_course_session({ date, courseName }) {
+    return await courseSessionAction(date, courseName, async (t) => {
+      setDone(t, true);
+      saveTodos(getTodos());
+      renderSchedule();
+      return { ok: true, action: 'completed', title: t.title, date: String(date), detail: t.detail };
+    });
+  },
+  async delete_course_session({ date, courseName }) {
+    return await courseSessionAction(date, courseName, async (t) => {
+      const todos = getTodos().filter((x) => x.id !== t.id);
+      saveTodos(todos);
+      try {
+        if (window.CourseSync && window.CourseSync.closeSessionKeys) window.CourseSync.closeSessionKeys([t.courseKey]);
+        if (window.CourseSync && window.CourseSync.scheduleCourseNotifications) window.CourseSync.scheduleCourseNotifications();
+      } catch (e) {}
+      renderSchedule();
+      return { ok: true, action: 'deleted', title: t.title, date: String(date) };
+    });
   }
 };
 
+/* 课程日程精确定位：先按日期+课程名匹配，找不到再按日期匹配唯一候选 */
+async function courseSessionAction(date, courseName, fn) {
+  const wantDate = String(date || '').trim();
+  const q = String(courseName || '').trim().toLowerCase();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(wantDate)) return JSON.stringify({ ok: false, error: '日期格式应为 YYYY-MM-DD' });
+  const todos = getTodos();
+  const keyOf = (t) => String(t.courseKey || '');   // 形如 课程名|YYYY-MM-DD|节次
+  const sessions = todos.filter((t) => t.courseKey && keyOf(t).split('|')[1] === wantDate);
+  if (!sessions.length) return JSON.stringify({ ok: false, error: `该日期（${wantDate}）没有课程日程，可用 get_course_sessions 查看` });
+  let target = q ? sessions.find((t) => keyOf(t).split('|')[0].toLowerCase().includes(q)) : null;
+  if (!target && q && sessions.length === 1) target = sessions[0];
+  if (!target && !q && sessions.length === 1) target = sessions[0];
+  if (!target) {
+    return JSON.stringify({
+      ok: false,
+      error: `未唯一确定要操作的那节课，请指定课程名`,
+      candidates: sessions.map((t) => ({ title: t.title, detail: t.detail, id: t.id }))
+    });
+  }
+  return JSON.stringify(await fn(target));
+}
+
 function chatSystemPrompt() {
   const week = '日一二三四五六'[new Date().getDay()];
-  return `你是「日程助手」App 内置的日程助手，可以调用工具直接查看和修改用户的日程数据（添加、修改、完成、恢复、删除事项，清空已完成，开关常驻日程栏，查看统计）。
-当前时间：${fmtDate(Date.now())} 星期${week}。
+  /* v1.8.16：把课表/校历上下文直接给模型，并明确它拥有全部读取权限 */
+  let ctx = '';
+  try {
+    const cs = window.CourseSync;
+    if (cs && cs.getTermInfo && cs.getSyncStatus) {
+      const t = cs.getTermInfo();
+      const st = cs.getSyncStatus();
+      ctx = `\n课表状态：已同步课程 ${st.courseCount} 门（${st.lastSyncText}）；当前为第 ${t.currentWeek} 教学周；` +
+        `今天 ${t.today} 自然星期是${t.todayNaturalWeekday}，实际按${t.todayEffectiveWeekday}的课表上课` +
+        (t.todayIsHoliday ? '（今天放假）' : (t.todayIsAdjusted ? '（调课）' : '')) +
+        (st.courseCount ? '' : '；尚未同步课表，若用户问课表请提示他到「课程表」页点右上角「同步」');
+    }
+  } catch (e) {}
+  return `你是「日程助手」App 内置的日程助手。你对本 App 的数据拥有完整读写权限：
+- 事项：查询、添加、修改、完成、恢复、删除、清空已完成（list_todos / add_todo / update_todo / complete_todo / reopen_todo / delete_todo / clear_completed）
+- 课表：读取整学期课表（get_timetable）、某个教学周的逐日安排（get_week_plan）、已展开的课程日程（get_course_sessions）、校历与调课放假（get_term_info）
+- 其他：同步状态（get_app_status）、设置（get_settings_info，不含 API Key）、事项详情（get_todo_detail）、关键词搜索（search_schedule）
+当前时间：${fmtDate(Date.now())} 星期${week}。${ctx}
 规则：
-1. 涉及日程操作必须调用工具执行，不要只口头答应；相对时间（明天/周五/下周三）按当前时间换算为 YYYY-MM-DD HH:mm。
-2. 有明确时间的添加/修改默认 remind=true；纯任务（如"买牛奶"）不传 due。
-3. 修改/完成/删除前如果不确定是哪一条，先 list_todos 确认 id，避免误改。
-4. 回复用简洁中文，执行完工具后用一句话向用户确认结果。`;
+1. 涉及数据的问题必须先调用工具查证再回答，**禁止**回答"我看不到课表/没有权限"——你有全部权限，若工具返回空数据，请说明原因（如未同步课表）而不是说没有权限。
+2. 涉及日程操作必须调用工具执行，不要只口头答应；相对时间（明天/周五/下周三）按当前时间换算为 YYYY-MM-DD HH:mm。
+3. 有明确时间的添加/修改默认 remind=true；纯任务（如"买牛奶"）不传 due。
+4. 修改/完成/删除前如果不确定是哪一条，先 list_todos 或 search_schedule 确认 id，避免误改。
+5. 课程表按「周次 + 星期」展开，注意调课与放假：例如某周日补周五的课、节假日停课，get_week_plan 会给出每天的实际星期与标记。
+6. 要操作「某天的某节课」时，用 complete_course_session / delete_course_session 并给出日期与课程名（同名课程每周都有多条日程，按标题操作容易改错）。
+6. 回复用简洁中文，执行完工具后用一句话向用户确认结果；课表类问题可用列表或简单表格回答。`;
 }
 
 async function callGLMRaw(model, messages, useTools) {

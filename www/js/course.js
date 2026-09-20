@@ -599,26 +599,8 @@
   /* v1.8.12：课程卡片不再由课表模板动态渲染——每节课都是 todos 里的独立日程记录，
      统一用日程页的通用卡片展示（可单独完成/删除/清理）。此处仅保留课程详情弹层。 */
 
-  /* 课程详情（只读弹层，复用通用 mask 结构） */
-  function openCourseDetail(occ) {
-    var c = occ.course;
-    var mask = document.getElementById('courseMask');
-    if (!mask) {
-      toast(c.name + ' · ' + WD_LABEL[occ.course.weekday] + ' 第' + occ.startSlot + '-' + occ.endSlot + '节 · ' + (c.location || '无地点'));
-      return;
-    }
-    var d = new Date(occ.date);
-    document.getElementById('cdTitle').textContent = c.name;
-    document.getElementById('cdBody').innerHTML =
-      '<div class="cd-row"><span>星期</span><b>' + WD_LABEL[c.weekday] + '</b></div>' +
-      '<div class="cd-row"><span>节次</span><b>第 ' + occ.startSlot + (occ.endSlot !== occ.startSlot ? ' - ' + occ.endSlot : '') + ' 节</b></div>' +
-      '<div class="cd-row"><span>时间</span><b>' + fmtHM(occ.startTs) + ' - ' + fmtHM(occ.endTs) + '</b></div>' +
-      '<div class="cd-row"><span>日期</span><b>' + (d.getMonth() + 1) + '月' + d.getDate() + '日（第 ' + occ.weekNo + ' 周）</b></div>' +
-      '<div class="cd-row"><span>地点</span><b>' + escapeHtml(c.location || '—') + '</b></div>' +
-      '<div class="cd-row"><span>教师</span><b>' + escapeHtml(c.teacher || '—') + '</b></div>' +
-      '<div class="cd-row"><span>周次</span><b>' + ((c.weeks && c.weeks.length) ? c.weeks.join('、') + ' 周' : '每周') + '</b></div>';
-    mask.hidden = false;
-  }
+  /* 课程详情：由 showCourseBlockDetail（课表页点课程块）提供。
+     日程页里的课程条目已是普通待办，走通用详情面板，故不再需要 openCourseDetail。 */
   function closeCourseDetail() {
     var mask = document.getElementById('courseMask');
     if (mask) mask.hidden = true;
@@ -950,12 +932,124 @@
     });
   }
 
+  /* ============ 对外数据接口（v1.8.16：供 AI 助手读取课表等全部数据） ============ */
+  function slotTimeText(ss, es) {
+    var a = SLOT_START[ss - 1];
+    if (!a) return '';
+    var b = SLOT_START[es - 1] || a;
+    var endMin = b[0] * 60 + b[1] + SLOT_MINUTES;
+    return ctPad2(a[0]) + ':' + ctPad2(a[1]) + '-' + ctPad2(Math.floor(endMin / 60)) + ':' + ctPad2(endMin % 60);
+  }
+  function courseBrief(c) {
+    return {
+      name: c.name, teacher: c.teacher, location: c.location,
+      weekday: c.weekday, weekdayText: WD_LABEL[c.weekday],
+      startSlot: c.startSlot, endSlot: c.endSlot,
+      time: slotTimeText(c.startSlot, c.endSlot),
+      weeks: (c.weeks && c.weeks.length) ? c.weeks : '每周',
+      weeksText: (c.weeks && c.weeks.length) ? (c.weeks[0] + '-' + c.weeks[c.weeks.length - 1] + ' 周') : '全周'
+    };
+  }
+  /* 某天的实际安排：调课后的星期、是否放假、当天课程 */
+  function dayPlan(dateObj, weekNo) {
+    var term = getTerm();
+    var off = isHoliday(dateObj, term);
+    var eff = effectiveWeekday(dateObj, term);
+    var nat = isoWeekday(dateObj);
+    var weekChar = ['', '一', '二', '三', '四', '五', '六', '日'];
+    var courses = getList().filter(function (c) {
+      if (!c || c.weekday !== eff) return false;
+      if (c.weeks && c.weeks.length && c.weeks.indexOf(weekNo) < 0) return false;
+      return true;
+    }).map(courseBrief);
+    return {
+      date: dateKey(dateObj),
+      naturalWeekdayText: '周' + weekChar[nat],
+      effectiveWeekdayText: '周' + weekChar[eff],
+      holiday: off,
+      mark: off ? '放假停课' : (eff !== nat ? '补周' + weekChar[eff] + '课（调课）' : ''),
+      markShort: off ? '休' : (eff !== nat ? '补周' + weekChar[eff] + '课' : ''),
+      courses: off ? [] : courses
+    };
+  }
+  function getTermInfo() {
+    var t = getTerm();
+    var now = new Date();
+    var weekChar = ['', '一', '二', '三', '四', '五', '六', '日'];
+    return {
+      label: t.label || '2026-2027学年 秋季学期',
+      week1Sunday: t.week1Sunday,
+      totalWeeks: t.totalWeeks || 20,
+      currentWeek: Math.min(Math.max(ctCurrentWeekNo(), 1), t.totalWeeks || 20),
+      today: dateKey(now),
+      todayNaturalWeekday: '周' + weekChar[isoWeekday(now)],
+      todayEffectiveWeekday: '周' + weekChar[effectiveWeekday(now, t)],
+      todayIsHoliday: isHoliday(now, t),
+      todayIsAdjusted: effectiveWeekday(now, t) !== isoWeekday(now),
+      overrides: t.overrides || {},
+      holidays: t.holidays || []
+    };
+  }
+  function getWeekPlan(weekNo) {
+    var term = getTerm();
+    var total = term.totalWeeks || 20;
+    var wk = Math.min(Math.max(parseInt(weekNo, 10) || ctCurrentWeekNo(), 1), total);
+    var w1 = ctParseDate(term.week1Sunday);
+    if (!w1) return { ok: false, error: '校历缺少第 1 周周日' };
+    /* 与课表网格一致：列为 周一…周日，其中「周日」= 本周周日（周一的前一天） */
+    var weekSun = new Date(w1.getFullYear(), w1.getMonth(), w1.getDate() + (wk - 1) * 7);
+    var days = [];
+    for (var d = 1; d <= 7; d++) {
+      var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + (d === 7 ? 0 : d));
+      days.push(dayPlan(dayDate, wk));
+    }
+    return { ok: true, week: wk, isCurrentWeek: wk === Math.min(Math.max(ctCurrentWeekNo(), 1), total), days: days };
+  }
+  /* 已展开成日程的课程节次（可由 AI 读取/操作，它们是 todos 里的独立条目） */
+  function getCourseSessions(days) {
+    var n = Math.min(Math.max(parseInt(days, 10) || 4, 1), 30);
+    var base = startOfDay(new Date());
+    var end = base + n * 86400000;
+    var out = [];
+    try {
+      store.get('todos', []).forEach(function (t) {
+        if (!t || !t.courseKey || !t.due) return;
+        if (t.due < base || t.due >= end) return;
+        out.push({
+          id: t.id, title: t.title, detail: t.detail,
+          date: dateKey(new Date(t.due)),
+          time: fmtHM(t.due) + '-' + fmtHM(t.endTs || (t.due + SLOT_MINUTES * 60000)),
+          weekNo: t.weekNo, done: !!t.done, courseKey: t.courseKey
+        });
+      });
+    } catch (e) {}
+    out.sort(function (a, b) { return (a.date + a.time) < (b.date + b.time) ? -1 : 1; });
+    return { ok: true, from: dateKey(new Date(base)), days: n, count: out.length, sessions: out };
+  }
+  function getSyncStatus() {
+    var at = getSyncAt();
+    return {
+      hasTimetable: getList().length > 0,
+      courseCount: getList().length,
+      lastSyncAt: at ? new Date(at).toISOString() : null,
+      lastSyncText: at ? fmtDate(at) : '尚未同步',
+      lastSyncUrl: store.get(K_URL, '') || null,
+      settings: getSettings()
+    };
+  }
+
   /* ============ 对外接口（供 app.js 调用） ============ */
   global.CourseSync = {
     init: init,
     sync: sync,
     getSettings: getSettings,
     getList: getList,
+    /* v1.8.16：AI 助手用的全量数据接口 */
+    getTermInfo: getTermInfo,
+    getTimetable: function () { return getList().map(courseBrief); },
+    getWeekPlan: getWeekPlan,
+    getCourseSessions: getCourseSessions,
+    getSyncStatus: getSyncStatus,
     occurrencesBetween: occurrencesBetween,
     todayOccurrences: todayOccurrences,
     rollSessions: rollSessions,              /* v1.8.12：把课表展开成独立日程（含 v1.8.14 对账） */
