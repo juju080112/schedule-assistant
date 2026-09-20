@@ -49,6 +49,11 @@
 
   <!-- 页面：日程（含待办事项） -->
   <div class="page active" id="page-schedule">
+    <!-- v1.8.19：下拉刷新指示器 -->
+    <div class="ptr" id="ptrBar">
+      <span class="ptr-spinner" id="ptrSpinner"></span>
+      <span class="ptr-text" id="ptrText">下拉刷新</span>
+    </div>
     <header class="header">
       <h1>日程</h1>
     </header>
@@ -120,7 +125,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.8.18</p>
+      <p class="version">日程助手 v1.8.19</p>
     </div>
   </div>
 
@@ -275,6 +280,7 @@
           <ul class="guide-list">
             <li>「解析」页：粘贴聊天记录、上传图片或文件，AI 自动拆成日程事项；</li>
             <li>「AI 助手」页：直接用一句话增删改查，例如「明天下午 3 点提醒我交作业」；它也能直接读取课表与校历（可问「这周的课表」「下周三有什么课」「今天上什么课」）；</li>
+            <li>日程页顶部下拉即可刷新（重新读取课表变化并重排日程）；</li>
             <li>同一条活动重复发两次也没关系，会自动合并成一条，详情取两次的结合。</li>
           </ul>
         </div>
