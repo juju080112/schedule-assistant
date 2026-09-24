@@ -53,6 +53,11 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
+      # 课表/校历逻辑自检：不依赖手机与浏览器，Node 里加载真实 www/js/course.js
+      # 这一步必须在 cap sync 之前跑，保证同步进原生工程的是通过自检的代码
+      - name: Course logic test
+        run: node tools/course-logic-test.js
+
       # 把 www/ 同步进原生工程（生成 capacitor-cordova-android-plugins 与 assets/public）
       - name: Capacitor sync
         run: npx cap sync android

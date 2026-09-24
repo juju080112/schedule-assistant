@@ -48,6 +48,11 @@ public final class CourseAutoSync {
     static final String KEY_AUTO = "auto";              // 每日自动同步开关，默认开
     static final String KEY_ALARM_KEYS = "alarmKeys";   // 已排程课程提醒的 key 清单（用于整体重排前取消）
     static final String KEY_LAST_FAIL_NOTI = "lastFailNoti"; // 上次「同步失败」提醒时间，避免连发骚扰
+    /* v1.8.20：后台同步（每日 06:30）只更新课表与提醒，课程日程条目由网页层展开。
+       这里记一个「待展开」标记 + 后台同步时间戳，网页层启动/回前台/被原生唤起时据此展开。 */
+    static final String KEY_PENDING_ROLL = "pendingRoll";
+    static final String KEY_PENDING_AT = "pendingRollAt";
+    static final String KEY_BACKEND_SYNC = "backendSyncAt";  // 最近一次后台同步时间戳（存 prefs，不被网页层 push 覆盖）
     static final String STATE_FILE = "course_state.json";
 
     static final int SYNC_REQUEST_CODE = 42301;
@@ -115,6 +120,14 @@ public final class CourseAutoSync {
             if ((lastUrl == null || lastUrl.isEmpty()) && old.has("lastGoodUrl")) {
                 st.put("lastGoodUrl", old.optString("lastGoodUrl", ""));
             }
+            /* v1.8.20：后台同步时间戳只增不减。
+               网页层每次 push 都会带一个自己的 syncedAt（可能是几天前的旧值），
+               若直接覆盖，网页层的「原生结果是否更新」判定会把后台同步结果当成旧的丢弃。 */
+            long oldBackend = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getLong(KEY_BACKEND_SYNC, old.optLong("backendSyncAt", 0L));
+            long oldSynced = Math.max(old.optLong("syncedAt", 0L), st.optLong("syncedAt", 0L));
+            st.put("backendSyncAt", oldBackend);
+            st.put("syncedAt", oldSynced);
             saveState(ctx, st);
         } catch (Exception e) {
             return;
@@ -349,6 +362,33 @@ public final class CourseAutoSync {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
         am.cancel(syncPI(ctx));
+    }
+
+    /* ============ v1.8.20：后台同步 → 网页层展开课程日程 ============ */
+
+    /** 后台同步成功：记下时间戳，并标记「网页层需重新展开未来三天的课程日程」 */
+    static void markPendingRoll(Context ctx) {
+        SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        sp.edit()
+                .putLong(KEY_BACKEND_SYNC, now)
+                .putLong(KEY_PENDING_AT, now)
+                .putBoolean(KEY_PENDING_ROLL, true)
+                .apply();
+    }
+
+    static boolean hasPendingRoll(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_PENDING_ROLL, false);
+    }
+
+    /** 网页层已采纳后台结果（展开完成）→ 清标记 */
+    static void clearPendingRoll(Context ctx) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_PENDING_ROLL, false).apply();
+    }
+
+    static long backendSyncAt(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_BACKEND_SYNC, 0L);
     }
 
     /* ============ 失败提醒节流 ============ */

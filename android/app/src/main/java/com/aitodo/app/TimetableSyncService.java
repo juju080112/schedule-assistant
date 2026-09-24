@@ -182,7 +182,9 @@ public class TimetableSyncService extends Service {
                 keep.put(o);
             }
             st.put("courses", keep);
-            st.put("syncedAt", System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            st.put("syncedAt", now);
+            st.put("backendSyncAt", now);
             /* 自动同步同样用教务页面的开学日期校准「第1周周日」锚点 */
             JSONObject term = r.optJSONObject("term");
             if (term != null) {
@@ -196,6 +198,11 @@ public class TimetableSyncService extends Service {
             }
             CourseAutoSync.saveState(this, st);
             CourseAutoSync.rescheduleAlarms(this);
+            /* v1.8.20：课表刷新后必须让课程日程条目也跟着滚动续排。
+               ① 标记「待展开」，网页层下次启动/回前台时会据此重新展开未来三天；
+               ② 若 App 此刻仍在前台（WebView 存活），直接唤起网页层立即展开，不等下次打开。 */
+            CourseAutoSync.markPendingRoll(this);
+            CoursePlugin.requestRoll();
             finish();
         } catch (Throwable t) {
             fail("课表自动同步异常：" + t.getMessage());

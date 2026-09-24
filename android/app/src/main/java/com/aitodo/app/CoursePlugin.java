@@ -37,6 +37,39 @@ public class CoursePlugin extends Plugin {
     /** 待回传的登录窗口调用（进程内静态，跨 Activity 生命周期可靠） */
     private static PluginCall pendingLogin;
 
+    /**
+     * v1.8.20：保留 App 前台那个 WebView 的弱引用。
+     * 后台同步服务（TimetableSyncService）拿到新课表后，若 App 仍在前台，
+     * 可直接在这里执行 JS 让网页层立即展开课程日程，不必等用户下次打开。
+     */
+    private static java.lang.ref.WeakReference<android.webkit.WebView> liveWebView;
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private static final String ROLL_JS =
+            "(function(){try{"
+                    + "if(window.CourseSync&&window.CourseSync.syncFromNative){window.CourseSync.syncFromNative();return 'syncFromNative';}"
+                    + "if(window.CourseSync&&window.CourseSync.rollSessions){window.CourseSync.rollSessions();return 'rollSessions';}"
+                    + "}catch(e){}return 'none';})()";
+
+    @Override
+    public void load() {
+        try {
+            com.getcapacitor.Bridge b = getBridge();
+            if (b != null) liveWebView = new java.lang.ref.WeakReference<android.webkit.WebView>(b.getWebView());
+        } catch (Throwable ignored) {}
+    }
+
+    /** 由 TimetableSyncService 在后台同步成功后调用：让存活的网页层立即重排课程日程 */
+    public static void requestRoll() {
+        MAIN.post(() -> {
+            try {
+                android.webkit.WebView wv = liveWebView == null ? null : liveWebView.get();
+                if (wv == null) return;
+                wv.evaluateJavascript(ROLL_JS, null);
+            } catch (Throwable ignored) {}
+        });
+    }
+
     /** 打开教务登录窗口。resolve 时带回抓取结果 JSON 与抓取页地址 */
     @PluginMethod
     public void openLogin(PluginCall call) {
@@ -129,13 +162,25 @@ public class CoursePlugin extends Plugin {
             JSObject ret = new JSObject();
             ret.put("state", st.toString());
             ret.put("syncedAt", st.optLong("syncedAt", 0L));
+            /* v1.8.20：后台同步时间戳与「待展开」标记，供网页层判定是否采纳 */
+            ret.put("backendSyncAt", CourseAutoSync.backendSyncAt(getContext()));
+            ret.put("pendingRoll", CourseAutoSync.hasPendingRoll(getContext()));
             call.resolve(ret);
         } catch (Exception e) {
             JSObject ret = new JSObject();
             ret.put("state", "");
             ret.put("syncedAt", 0L);
+            ret.put("backendSyncAt", 0L);
+            ret.put("pendingRoll", false);
             call.resolve(ret);
         }
+    }
+
+    /** v1.8.20：网页层展开完成，清除「待展开」标记（避免每次启动都无谓重排） */
+    @PluginMethod
+    public void ackRoll(PluginCall call) {
+        CourseAutoSync.clearPendingRoll(getContext());
+        call.resolve();
     }
 
     /** 读取最近一次抓取的原始报告（course_raw.json），供 Intent 通道异常时的兜底 */

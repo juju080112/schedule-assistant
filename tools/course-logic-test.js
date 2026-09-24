@@ -1,10 +1,30 @@
 /* 逻辑测试台：在 Node 里加载真实的 www/js/course.js（桩化 DOM/插件），验证课表与校历算法
-   运行：node tools/course-logic-test.js   （可用 APP_DIR 环境变量指定工程目录） */
+   运行：node tools/course-logic-test.js
+   可选：APP_NOW=2026-09-20T10:00:00+08:00 指定「今天」（默认 2026-09-20，校庆调课日）
+        APP_DIR=<工程目录> 指定工程路径 */
 const fs = require('fs');
 const path = require('path');
 
 const APP = process.env.APP_DIR || path.resolve(__dirname, '..');
 const code = fs.readFileSync(path.join(APP, 'www/js/course.js'), 'utf8');
+
+/* ---- 固定「今天」：断言必须与真实日期无关，否则换个日子跑就全红 ---- */
+const FIXED_NOW = new Date(process.env.APP_NOW || '2026-09-20T10:00:00+08:00').getTime();
+const RealDate = Date;
+class FakeDate extends RealDate {
+  constructor(...args) { if (args.length === 0) super(FIXED_NOW); else super(...args); }
+  static now() { return FIXED_NOW; }
+}
+global.Date = FakeDate;
+const pad = (n) => String(n).padStart(2, '0');
+const todayKey = (() => {
+  const d = new Date(FIXED_NOW);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+})();
+const plusDays = (n) => {
+  const d = new Date(FIXED_NOW + n * 86400000);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 /* ---- 最小环境桩 ---- */
 const mem = {};
@@ -42,14 +62,24 @@ global.toast = noop;
 global.renderSchedule = noop;
 global.refreshTodayBar = noop;
 global.fmtDate = (ts) => {
-  const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 global.fmtHM = (ts) => {
-  const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const d = new Date(ts);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-global.console = console;
+
+/* ---- 桩化的原生插件（模拟 CoursePlugin.getState / syncAlarms / ackRoll） ---- */
+let nativeState = { state: '', syncedAt: 0, backendSyncAt: 0, pendingRoll: false };
+const ackCalls = [];
+global.window.__cap = {
+  CourseSync: {
+    getState: () => Promise.resolve(nativeState),
+    syncAlarms: () => Promise.resolve({}),
+    ackRoll: () => { ackCalls.push(1); return Promise.resolve({}); }
+  }
+};
 
 /* 用沙箱执行真实代码 */
 const vm = require('vm');
@@ -78,7 +108,7 @@ const check = (name, cond, detail) => {
 /* ===== 1. 校历信息 ===== */
 const ti = CS.getTermInfo();
 check('当前教学周 = 4', ti.currentWeek === 4, `实际 ${ti.currentWeek}`);
-check('今天(9/20)按周五课表上课', ti.todayEffectiveWeekday === '周五', `实际 ${ti.todayEffectiveWeekday}`);
+check('今天按周五课表上课（校庆调课）', ti.todayEffectiveWeekday === '周五', `实际 ${ti.todayEffectiveWeekday}`);
 check('今天被识别为调课日', ti.todayIsAdjusted === true, `isAdjusted=${ti.todayIsAdjusted}`);
 check('9/25(中秋) 在放假日历中', (ti.holidays || []).includes('2026-09-25'));
 check('9/20 调课规则存在', (ti.overrides || {})['2026-09-20'] === 5);
@@ -104,7 +134,7 @@ check('9/24(周四) 正常无课', byDate['2026-09-24'] && byDate['2026-09-24'].
 /* ===== 3. 展开成课程日程（今天起 4 天）===== */
 CS.rollSessions();
 const sess = CS.getCourseSessions(4);
-const todaySess = (sess.sessions || []).filter((s) => s.date === '2026-09-20');
+const todaySess = (sess.sessions || []).filter((s) => s.date === todayKey);
 check('今天生成了课程日程', todaySess.length > 0, `数量 ${todaySess.length}`);
 check('今天的日程是周五课（大学生心理学）',
   todaySess.some((s) => s.title.includes('大学生心理学')),
@@ -114,6 +144,12 @@ check('今天的日程不含周日课', !todaySess.some((s) => s.title.includes(
 check('大学生心理学时间 15:55-18:20',
   todaySess.some((s) => s.title.includes('大学生心理学') && s.time === '15:55-18:20'),
   todaySess.filter((s) => s.title.includes('大学生心理学')).map((s) => s.time).join(','));
+
+/* ===== 3b. 窗口 = 当天 + 往后 3 天 ===== */
+const windowDates = Array.from(new Set((sess.sessions || []).map((s) => s.date))).sort();
+check('课程日程只覆盖「今天 ~ 今天+3」',
+  windowDates.length > 0 && windowDates.every((d) => d >= todayKey && d <= plusDays(3)),
+  windowDates.join(' , '));
 
 /* ===== 4. 周日课应在正常周日出现（9/13 第3周），且假期(9/27、10/4)不排 ===== */
 const plan3 = CS.getWeekPlan(3);
@@ -155,9 +191,9 @@ check('重复展开不会产生重复日程', CS.getCourseSessions(4).count === 
   `${countBefore} → ${CS.getCourseSessions(4).count}`);
 
 /* 把今天那条课程日程标记完成 → 再次展开后必须仍是已完成，不能被重建为未完成 */
-const todos = JSON.parse(mem['todos']);
-const todayItem = todos.find((t) => t.courseKey && t.date === undefined && String(t.courseKey).includes('2026-09-20'));
-const target = todayItem || todos.find((t) => t.courseKey && String(t.courseKey).includes('2026-09-20'));
+const todosNow = () => JSON.parse(localStorage.getItem('todos') || '[]');
+const todos = todosNow();
+const target = todos.find((t) => t.courseKey && String(t.courseKey).includes(todayKey));
 check('找得到今天的课程日程条目', !!target, target ? target.title : '未找到');
 if (target) {
   target.done = true; target.doneAt = Date.now();
@@ -169,18 +205,18 @@ if (target) {
 /* 删除（永久关闭）后不得再生成 */
 if (target) {
   CS.closeSessionKeys([target.courseKey]);
-  const kept = JSON.parse(mem['todos']).filter((t) => t.courseKey !== target.courseKey);
+  const kept = todosNow().filter((t) => t.courseKey !== target.courseKey);
   localStorage.setItem('todos', JSON.stringify(kept));
   CS.rollSessions();
   const back = CS.getCourseSessions(4).sessions.find((s) => s.courseKey === target.courseKey);
-  check('关闭后不再重新生成（不复活）', !back, back ? '又出现了' : '未复活');
+  check('用户关闭后不再重新生成（不复活）', !back, back ? '又出现了' : '未复活');
 }
 
 /* ===== 7. 课表为空时的健壮性 ===== */
 localStorage.setItem('courseList', JSON.stringify([]));
 CS.rollSessions();
 check('空课表不报错且不生成日程', CS.getCourseSessions(4).count === 0);
-check('空课表时 get_week_plan 仍返回结构', (CS.getWeekPlan(3).days || []).length === 7);
+check('空课表时 getWeekPlan 仍返回结构', (CS.getWeekPlan(3).days || []).length === 7);
 
 /* ===== 8. courseKey 格式契约（AI 工具 courseSessionAction 依赖 name|date|slot）===== */
 localStorage.setItem('courseList', JSON.stringify(timetable));
@@ -193,10 +229,82 @@ const keysOk = sess2.length > 0 && sess2.every((s) => {
   return parts.length === 3 && /^\d{4}-\d{2}-\d{2}$/.test(parts[1]) && /^\d+$/.test(parts[2]) && parts[0].length > 0;
 });
 check('courseKey 格式为 课程名|YYYY-MM-DD|节次', keysOk, sess2.map((s) => s.courseKey).join(' ; '));
-const todayKeys = sess2.filter((s) => s.date === '2026-09-20').map((s) => s.courseKey);
-check('今天的 courseKey 日期段为 2026-09-20', todayKeys.every((k) => k.split('|')[1] === '2026-09-20'), todayKeys.join(' ; '));
+const todayKeys = sess2.filter((s) => s.date === todayKey).map((s) => s.courseKey);
+check(`今天的 courseKey 日期段为 ${todayKey}`, todayKeys.every((k) => k.split('|')[1] === todayKey), todayKeys.join(' ; '));
 
-console.log('\n=== 汇总 ===');
-const failed = results.filter((r) => !r.pass);
-console.log(`通过 ${results.length - failed.length}/${results.length}`);
-if (failed.length) { console.log('失败项:'); failed.forEach((f) => console.log(' - ' + f.name + '  ' + (f.detail || ''))); process.exitCode = 1; }
+/* ===== 9. v1.8.20：自动对账不得把节次「永久关闭」 ===== */
+const psy = timetable[0];
+const psyKey = `${psy.name}|${todayKey}|${psy.startSlot}`;
+const existsPsy = () => CS.getCourseSessions(4).sessions.some((s) => s.courseKey === psyKey);
+localStorage.removeItem('courseClosedMap');
+localStorage.setItem('todos', JSON.stringify([]));
+localStorage.setItem('courseList', JSON.stringify([psy]));
+CS.rollSessions();
+check('按课表生成今天的课程日程', existsPsy());
+/* 模拟「校历校准 / 周次数据变化」导致该节次暂时不在窗口内 */
+localStorage.setItem('courseList', JSON.stringify([Object.assign({}, psy, { weeks: [1, 2, 3] })]));
+CS.rollSessions();
+check('课表不再包含该节次时自动移除日程', !existsPsy());
+const closedAfter = JSON.parse(localStorage.getItem('courseClosedMap') || '{}');
+check('自动移除不写入永久关闭（v1.8.20 修复的慢性中毒）', !closedAfter[psyKey],
+  JSON.stringify(closedAfter));
+/* 课表恢复后必须能重新生成 —— 旧逻辑这里会永久失效 */
+localStorage.setItem('courseList', JSON.stringify([psy]));
+CS.rollSessions();
+check('课表恢复后可再次生成（不被永久关闭）', existsPsy());
+
+/* ===== 10. v1.8.20：采纳原生后台同步（每日 06:30）的结果 ===== */
+const asyncChecks = (async () => {
+  const backendCourses = [
+    Object.assign({}, psy),
+    { name: '新生研讨课', teacher: '赵老师', location: '5201', weekday: 2, startSlot: 6, endSlot: 7, weeks: Array.from({ length: 20 }, (_, i) => i + 1), raw: '' }
+  ];
+
+  /* 10a. 陈旧的原生结果（时间戳不新、无 pendingRoll）→ 不采纳 */
+  nativeState = {
+    state: JSON.stringify({ courses: backendCourses, syncedAt: 0, backendSyncAt: 0 }),
+    syncedAt: 0, backendSyncAt: 0, pendingRoll: false
+  };
+  const stale = await CS.pullNativeState();
+  check('陈旧的原生结果不被采纳', stale === false, `返回值 ${stale}`);
+
+  /* 10b. pendingRoll=true（后台刚同步完）→ 无条件采纳 */
+  const at = Date.now() + 60000;
+  nativeState = {
+    state: JSON.stringify({ courses: backendCourses, syncedAt: at, backendSyncAt: at, term: { week1Sunday: '2026-08-30', totalWeeks: 20 } }),
+    syncedAt: at, backendSyncAt: at, pendingRoll: true
+  };
+  const adopted = await CS.pullNativeState();
+  check('后台同步结果被采纳（pendingRoll）', adopted === true, `返回值 ${adopted}`);
+  check('新增课程进入本地课表', CS.getList().some((c) => c.name === '新生研讨课'),
+    CS.getList().map((c) => c.name).join(','));
+  check('已采纳的后台时间戳被记账', CS.getBackendSyncAt() === at, `${CS.getBackendSyncAt()} vs ${at}`);
+  check('采纳后回执原生（ackRoll）', ackCalls.length > 0, `ackRoll 调用 ${ackCalls.length} 次`);
+
+  /* 10c. 采纳后重新展开：新生研讨课应进入未来三天的日程 */
+  localStorage.removeItem('courseClosedMap');
+  CS.rollSessions();
+  const hasNew = CS.getCourseSessions(4).sessions.some((s) => s.title.includes('新生研讨课'));
+  check('新课进入未来三天的课程日程', hasNew,
+    CS.getCourseSessions(4).sessions.map((s) => s.title).join(' | ') || '（空）');
+
+  /* 10d. 同一后台时间戳再次拉取 → 幂等，不重复采纳也不报错 */
+  nativeState = {
+    state: JSON.stringify({ courses: backendCourses, syncedAt: at, backendSyncAt: at }),
+    syncedAt: at, backendSyncAt: at, pendingRoll: false
+  };
+  const again = await CS.pullNativeState();
+  check('同一后台结果不会重复采纳', again === false, `返回值 ${again}`);
+})();
+
+asyncChecks.finally(() => {
+  console.log('\n=== 汇总 ===');
+  console.log(`模拟「今天」：${todayKey}（可用 APP_NOW 覆盖）`);
+  const failed = results.filter((r) => !r.pass);
+  console.log(`通过 ${results.length - failed.length}/${results.length}`);
+  if (failed.length) {
+    console.log('失败项:');
+    failed.forEach((f) => console.log(' - ' + f.name + '  ' + (f.detail || '')));
+    process.exitCode = 1;
+  }
+});

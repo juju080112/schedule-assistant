@@ -62,6 +62,7 @@
   var K_HIDE = 'courseHideMap';  // 已从日程移除的课程节次（仅当天，不动课表数据）
   var K_CLOSED = 'courseClosedMap'; // v1.8.12：永久关闭的节次（已清理/已删除），不再生成日程且跳过提醒
   var K_EPOCH = 'courseDataEpoch';
+  var K_BSYNC = 'courseBackendSyncAt'; // v1.8.20：已采纳的「原生后台同步」时间戳（与网页层自己的 syncedAt 分开）
   var EPOCH_NOW = 'v1.7.4';      // 升级到此版本时清一次旧同步记录
 
   function getSettings() {
@@ -97,6 +98,12 @@
 
   function getSyncAt() { return store.get(K_SYNC, 0); }
   function setSyncAt(ts) { store.set(K_SYNC, ts); }
+
+  /* v1.8.20：后台同步（原生 06:30）的时间戳单独记账。
+     网页层每次 push 都会用自己的 syncedAt 覆盖原生状态里的同名字段，
+     若仍用「原生 syncedAt > 网页层 syncedAt」当采纳门槛，后台同步结果会被判为不新而丢弃。 */
+  function getBackendSyncAt() { return store.get(K_BSYNC, 0); }
+  function setBackendSyncAt(ts) { store.set(K_BSYNC, ts); }
 
   /* ============ 日期工具 ============ */
   function startOfDay(d) {
@@ -199,16 +206,25 @@
     if (!p || !p.getState) return Promise.resolve(false);
     return p.getState().then(function (res) {
       if (!res || !res.state) return false;
-      var ns = Number(res.syncedAt || 0);
-      if (!ns || ns <= getSyncAt()) return false;
       var st;
       try { st = JSON.parse(res.state); } catch (e) { return false; }
+      if (!st) return false;
+      var backendAt = Number(res.backendSyncAt || st.backendSyncAt || 0);
+      var pending = (res.pendingRoll === true || res.pendingRoll === 'true' || res.pendingRoll === 1);
+      var ns = Number(res.syncedAt || st.syncedAt || 0);
+      /* 采纳判据（v1.8.20 放宽）：满足任一即采纳
+           ① 原生标记「后台同步已完成、待网页层展开」→ 无条件采纳
+           ② 后台同步时间戳比网页层已采纳的新
+           ③ 原生课表时间戳比网页层的新（兼容老版本原生，只有 syncedAt） */
+      var fresh = pending || (backendAt > getBackendSyncAt()) || (ns > getSyncAt() + 1000);
+      if (!fresh) return false;
       var courses = (st.courses || []).map(normalizeCourse).filter(function (c) {
         return c.name && c.weekday && c.startSlot;
       });
-      if (!courses.length) return false;
+      if (!courses.length) { ackRoll(p); return false; }
       saveList(courses);
-      setSyncAt(ns);
+      if (ns > getSyncAt()) setSyncAt(ns);
+      if (backendAt > getBackendSyncAt()) setBackendSyncAt(backendAt);
       if (st.term && st.term.week1Sunday) {
         var t = getTerm();
         if (st.term.week1Sunday) t.week1Sunday = st.term.week1Sunday;
@@ -216,8 +232,26 @@
         if (st.term.label) t.label = st.term.label;
         saveTerm(t);
       }
+      ackRoll(p);
       return true;
     }).catch(function () { return false; });
+  }
+
+  /* 告知原生：网页层已采纳这次后台结果，可以清除「待展开」标记 */
+  function ackRoll(p) {
+    try { if (p && p.ackRoll) { var r = p.ackRoll({}); if (r && r.catch) r.catch(function () {}); } } catch (e) {}
+  }
+
+  /* v1.8.20：原生后台同步（每日 06:30）完成后主动调用的统一入口
+     —— 取回原生课表 → 对账展开课程日程 → 重绘，保证「不打开 App 也能在下次可见时看到最新三天的课」。 */
+  function syncFromNative() {
+    return pullNativeState().then(function (adopted) {
+      try { dropStaleSessions(); syncSessions(); } catch (e) {}
+      try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
+      try { renderCourseTable(true); } catch (e) {}
+      refreshTodayBarSafe();
+      return adopted;
+    });
   }
 
   /* ============ 课程日程对账（v1.8.14） ============
@@ -287,9 +321,12 @@
         kept.push(t);
         return;
       }
-      /* 2) 课表里已不存在：未完成且在窗口内 → 自动删除并永久关闭 */
+      /* 2) 课表里已不存在：未完成且在窗口内 → 自动移除
+         v1.8.20：这里**不再**写入 K_CLOSED 永久关闭。
+         旧逻辑会把「因放假 / 周次越界 / 校历校准而暂时不在窗口内」的节次永久关闭，
+         之后即使课表恢复也永不重建 —— 这正是课程日程「生成几天后彻底不再出现」的根因之一。
+         永久关闭只保留给用户的显式操作（删除、一键清理，见 app.js）。 */
       if (!t.done && t.due && t.due >= todayStart) {
-        closed[t.courseKey] = 1;
         changed = true;
         return;
       }
@@ -319,7 +356,6 @@
     });
     if (changed) {
       try { store.set('todos', kept); } catch (e) {}
-      try { store.set(K_CLOSED, closed); } catch (e) {}
       try { scheduleCourseNotifications(); } catch (e) {}
     }
     return changed;
@@ -569,7 +605,12 @@
       else if (!list.length) tipEl.textContent = '尚未同步课表';
       else {
         var days = Math.floor((Date.now() - syncAt) / 86400000);
-        tipEl.textContent = '已同步 ' + list.length + ' 门 · ' + (days <= 0 ? '今天' : days + ' 天前') + (days >= 7 ? '（建议刷新）' : '');
+        var txt = '已同步 ' + list.length + ' 门 · ' + (days <= 0 ? '今天' : days + ' 天前') + (days >= 7 ? '（建议刷新）' : '');
+        /* v1.8.20：窗口内 0 节课大多是放假，明确说出来，避免被误判成「课程没生成」 */
+        try {
+          if (Object.keys(expectedSessions()).length === 0) txt += ' · 未来三天无课（假期/无排课）';
+        } catch (e) {}
+        tipEl.textContent = txt;
       }
     }
   }
@@ -686,21 +727,21 @@
     } catch (e) {}
     bind();
     loadSettingsUI();
-    /* v1.8.12：把课表展开成独立日程 + 清理过期历史 */
+    /* v1.8.12：先按本地已有课表展开成独立日程（离线也能立刻看到今天与未来三天的课） */
     try { dropStaleSessions(); rollSessions(); } catch (e) {}
-    /* 首次或数据变更后续排提醒 */
-    if (getSettings().enabled && getList().length) {
-      scheduleCourseNotifications();
-    }
-    /* v1.8.14：启动时先取回原生（后台 06:30 同步）的结果，再对账课程日程 */
+    /* v1.8.20：顺序 = 先取回原生后台同步结果 → 再对账 → 最后推送排程。
+       旧顺序（先 push 后 pull）会把原生较新的 syncedAt 用网页层的旧值覆盖，
+       导致后台 06:30 的同步结果在启动时被判为「不新」而丢弃。 */
+    var afterAdopt = function () {
+      try { dropStaleSessions(); syncSessions(); } catch (e) {}
+      if (getSettings().enabled && getList().length) { try { scheduleCourseNotifications(); } catch (e) {} }
+      try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
+      try { renderCourseTable(true); } catch (e) {}
+    };
     try {
-      pullNativeState().then(function () {
-        try { dropStaleSessions(); syncSessions(); } catch (e) {}
-        try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
-        try { renderCourseTable(true); } catch (e) {}
-      });
+      pullNativeState().then(afterAdopt, afterAdopt);
     } catch (e) {
-      try { dropStaleSessions(); syncSessions(); } catch (e2) {}
+      afterAdopt();
     }
     /* app.js 的启动流程早于本文件，这里补渲染一次课程区 */
     try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
@@ -998,6 +1039,8 @@
     rollSessions: rollSessions,              /* v1.8.12：把课表展开成独立日程（含 v1.8.14 对账） */
     syncSessions: syncSessions,              /* v1.8.14：课表变动后对账（更新/删除/补建） */
     pullNativeState: pullNativeState,        /* v1.8.14：采纳原生后台同步结果 */
+    syncFromNative: syncFromNative,          /* v1.8.20：原生后台同步完成后主动调用的统一入口 */
+    getBackendSyncAt: getBackendSyncAt,      /* v1.8.20：已采纳的后台同步时间戳（排查用） */
     dropStaleSessions: dropStaleSessions,
     closeSessionKeys: closeSessionKeys,      /* 清理/删除后永久关闭这些节次 */
     sessionKeyOf: function (t) { return (t && t.courseKey) || null; },
@@ -1010,7 +1053,7 @@
     /* 清空所有数据时调用（设置页「清空所有数据」） */
     purge: function () {
       cancelAllCourseNotifications(); /* 空课表 → 原生取消全部课程提醒 */
-      [K_LIST, K_TERM, K_SYNC, K_SET, K_URL, K_RAW, K_DEBUG, K_DONE, K_HIDE, K_CLOSED].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      [K_LIST, K_TERM, K_SYNC, K_SET, K_URL, K_RAW, K_DEBUG, K_DONE, K_HIDE, K_CLOSED, K_BSYNC].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       var p = coursePlugin();
       if (p && p.clearLogin) { try { p.clearLogin().catch(function () {}); } catch (e) {} }
     }
