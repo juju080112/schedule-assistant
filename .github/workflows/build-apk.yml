@@ -114,10 +114,34 @@ jobs:
           path: ${{ steps.apk.outputs.name }}
           if-no-files-found: error
 
-      # 只有用正式密钥签名时才附加到 Release，避免 debug 包覆盖已发布的正式包
-      - name: Attach APK to Release
+      # v1.8.20：建 Release 与「是否签名」解耦。
+      # 旧逻辑只在 signed==true 时才建 Release，而未配置签名 Secrets 时 signed 恒为 false，
+      # 结果就是「tag 推上去了、Releases 页面什么都没有」——这次 v1.8.20 就是这么丢的。
+      - name: Attach APK to Release (signed)
         if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.signed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.apk.outputs.name }}
           generate_release_notes: true
+
+      # 未签名时同样建 Release，只是不附 APK（避免 debug 包覆盖已发布的正式包），
+      # 正文里写清去哪里拿安装包。
+      - name: Create Release (unsigned)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.signed != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ⚠️ **本版本未附带 APK**：仓库未配置签名 Secrets，CI 产物为 debug 签名，按既定策略不附加到 Release（避免覆盖正式签名包）。
+
+            安装包获取方式二选一：
+
+            1. 打开本仓库 **Actions → 最新的 Build APK 运行 → Artifacts → `apk`** 下载；
+            2. 本地用正式密钥构建：
+               ```bash
+               cd android && ./gradlew assembleRelease
+               ```
+
+            自动生成的更新说明见下方（由本次标签与上一标签之间的提交汇总）。
+          append_body: true
