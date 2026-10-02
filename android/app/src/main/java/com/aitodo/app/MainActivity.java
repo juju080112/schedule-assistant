@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     registerPlugin(BarPlugin.class);
     registerPlugin(CoursePlugin.class);
     registerPlugin(SystemPlugin.class);
+    registerPlugin(CapturePlugin.class);
     super.onCreate(savedInstanceState);
   }
 

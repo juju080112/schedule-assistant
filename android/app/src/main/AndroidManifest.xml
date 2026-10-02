@@ -60,6 +60,19 @@
                 android:value="Daily automatic timetable sync: loads the user's own logged-in timetable page in a headless WebView and reads it locally" />
         </service>
 
+        <!-- v1.9.0 采集版：指定应用（默认 QQ）的通知采集。
+             必须由系统绑定，所以 exported=true 且声明 BIND_NOTIFICATION_LISTENER_SERVICE；
+             用户在系统「通知使用权」里授权后系统才会绑定，未授权时什么都收不到。 -->
+        <service
+            android:name=".CaptureService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- v1.7.0：课程提醒闹钟（准点 + 提前1小时，与其他日程一致） -->
         <receiver
             android:name=".CourseAlarmReceiver"

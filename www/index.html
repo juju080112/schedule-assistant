@@ -122,10 +122,11 @@
         <button class="set-link" data-sub="ai" type="button"><span class="set-ico">✨</span><span class="set-name">AI 配置</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="course" type="button"><span class="set-ico">📚</span><span class="set-name">课表同步</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="notify" type="button"><span class="set-ico">🔔</span><span class="set-name">通知与提醒</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="capture" type="button"><span class="set-ico">📥</span><span class="set-name">消息采集</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.8.20</p>
+      <p class="version">日程助手 v1.9.0</p>
     </div>
   </div>
 
@@ -243,6 +244,37 @@
           <label class="switch"><input type="checkbox" id="setTodayBar" checked><span class="slider"></span></label>
         </div>
       </div>
+      <div class="sub-pane" data-sub="capture" hidden>
+        <div class="privacy-note">
+          <b>这里只记账，不替你判断</b>
+          <p>开启后，本应用把 <b>QQ 弹出来的通知原样记在本机</b>并列在下面，方便你先看清「到底能收到什么」。不联网、不外传、不会自动生成日程；采集到的内容可以自己复制，再丢给「解析」页或「AI 助手」。随时可关、可清空。</p>
+        </div>
+        <div id="capStatus" class="status"></div>
+        <div class="switch-row">
+          <div class="switch-label">
+            <b>采集 QQ 通知</b>
+          </div>
+          <label class="switch"><input type="checkbox" id="capEnabled"><span class="slider"></span></label>
+        </div>
+        <div class="cap-ops-row">
+          <button class="btn-ghost" id="capGrant" type="button">去系统授权</button>
+          <button class="btn-ghost" id="capRescan" type="button">重扫通知栏</button>
+          <button class="btn-ghost" id="capReload" type="button">刷新</button>
+        </div>
+        <div class="guide-sec">
+          <h4>什么情况收不到（不是坏了）</h4>
+          <ul class="guide-list">
+            <li>那个群在 QQ 里被设成<b>免打扰</b>：QQ 自己不弹通知，本应用就没东西可记；</li>
+            <li><b>正在 QQ 里看着这个群</b>时不弹通知；</li>
+            <li>开启之前的历史消息；</li>
+            <li>图片、文件、语音：通知里通常只有「[图片]」这类占位，看不到内容。</li>
+          </ul>
+        </div>
+        <div id="capList" class="cap-list"></div>
+        <div class="danger-zone">
+          <button class="btn-danger" id="capClear" type="button">清空已采集</button>
+        </div>
+      </div>
       <div class="sub-pane" data-sub="guide" hidden>
         <div class="guide-status" id="guideStatus">正在检查权限…</div>
 
@@ -330,5 +362,6 @@
   <script src="lib/plugins.js" defer></script>
   <script src="js/app.js" defer></script>
   <script src="js/course.js" defer></script>
+  <script src="js/capture.js" defer></script>
 </body>
 </html>
