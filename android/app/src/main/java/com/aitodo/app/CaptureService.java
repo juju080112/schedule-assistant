@@ -48,7 +48,9 @@ public class CaptureService extends NotificationListenerService {
     private static final int KEEP_FIELDS = 40;      /* 只有最近 40 条保留完整字段 dump */
     private static final long MAX_AGE = 7L * 86400000L;
     private static final int MAX_TEXT = 2000;
-    private static final int MAX_DUMP = 1200;
+    /* v1.9.1：真机核对时 1200/160 太容易把 QQ 给的内容当成我们的截断，放宽 */
+    private static final int MAX_DUMP = 2600;
+    private static final int MAX_DUMP_VALUE = 700;
 
     private static volatile CaptureService instance;
 
@@ -204,21 +206,36 @@ public class CaptureService extends NotificationListenerService {
         String text = cs(ex, Notification.EXTRA_TEXT);
         String big = cs(ex, Notification.EXTRA_BIG_TEXT);
         String lines = lineArray(ex);
+        String ticker = n.tickerText == null ? "" : String.valueOf(n.tickerText);
+        String channel = "";
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26) channel = nz(n.getChannelId());
+        } catch (Throwable ignored) {
+        }
 
-        String body = firstNotEmpty(text, big, lines, sub);
+        /* v1.9.1 真机实测（vivo OriginOS16 + QQ 9.3.70）：正文只出现在 text 与 tickerText，
+           没有 bigText / textLines，而且 QQ 自己就把 text 截在百字左右。
+           所以正文取「最长的那个」，别死盯 android.text。 */
+        String body = longestOf(text, big, lines);
+        if (isEmpty(body)) body = longestOf(ticker, sub);
         if (isEmpty(title) && isEmpty(body)) return null;
+        int unread = unreadOf(title);
 
         try {
             JSONObject o = new JSONObject();
-            String core = nz(title) + "\u0001" + nz(sub) + "\u0001" + nz(text) + "\u0001" + nz(big) + "\u0001" + nz(lines);
+            String core = nz(title) + "\u0001" + nz(sub) + "\u0001" + nz(text) + "\u0001" + nz(big) + "\u0001" + nz(lines) + "\u0001" + nz(ticker);
             o.put("id", sbn.getPackageName() + "|" + sbn.getKey() + "|" + Integer.toHexString(core.hashCode()));
             o.put("pkg", sbn.getPackageName());
             o.put("app", appLabel(sbn.getPackageName()));
-            o.put("title", cut(title, MAX_TEXT));
+            o.put("title", cut(stripUnread(title), MAX_TEXT));
             o.put("sub", cut(sub, 300));
             o.put("text", cut(text, MAX_TEXT));
             o.put("big", cut(big, MAX_TEXT));
             o.put("lines", cut(lines, MAX_TEXT));
+            o.put("ticker", cut(ticker, MAX_TEXT));
+            o.put("channel", channel);
+            if (unread > 0) o.put("unread", unread);
+            o.put("body", cut(body, MAX_TEXT));
             o.put("time", sbn.getPostTime() > 0 ? sbn.getPostTime() : System.currentTimeMillis());
             o.put("when", n.when);
             o.put("from", from);
@@ -329,7 +346,7 @@ public class CaptureService extends NotificationListenerService {
                 else if (v instanceof Object[]) vs = "<" + v.getClass().getSimpleName() + " x" + ((Object[]) v).length + ">";
                 else vs = String.valueOf(v);
                 vs = vs.replace('\n', ' ');
-                if (vs.length() > 160) vs = vs.substring(0, 160) + "…";
+                if (vs.length() > MAX_DUMP_VALUE) vs = vs.substring(0, MAX_DUMP_VALUE) + "…";
                 sb.append(k).append('=').append(vs).append('\n');
             }
         } catch (Throwable t) {
@@ -346,9 +363,30 @@ public class CaptureService extends NotificationListenerService {
         return s == null ? "" : s;
     }
 
-    private static String firstNotEmpty(String... xs) {
-        for (String x : xs) if (!isEmpty(x)) return x;
-        return "";
+    /** 取最长的那个当正文：QQ 各版本把内容放在 text / bigText / textLines / tickerText 任意一处。 */
+    private static String longestOf(String... xs) {
+        String best = "";
+        for (String x : xs) if (x != null && x.length() > best.length()) best = x;
+        return best;
+    }
+
+    /** 未读多条时 QQ 会把标题写成「昵称(3条新消息)」，把计数拆出来，别污染标题匹配。 */
+    private static int unreadOf(String title) {
+        if (title == null) return 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("[(（](\\d+)\\s*条[^)）]*[)）]\\s*$").matcher(title.trim());
+        if (m.find()) {
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (Throwable ignored) {
+            }
+        }
+        return 0;
+    }
+
+    private static String stripUnread(String title) {
+        if (title == null) return "";
+        return title.trim().replaceAll("[(（]\\d+\\s*条[^)）]*[)）]\\s*$", "").trim();
     }
 
     private static String cut(String s, int max) {

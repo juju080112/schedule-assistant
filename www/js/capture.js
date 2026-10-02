@@ -48,21 +48,36 @@
     el.textContent = msg;
   }
 
-  /* 一条通知的「正文」：QQ 在不同机型上会把内容放在 text / bigText / textLines 里，取第一个非空 */
+  /* 正文：原生已按「最长的消息字段」选好（body），老数据没 body 时自己挑一次。
+     真机实测 QQ 只填 android.text 且自己截在百字左右，所以这里拿不到全文不是本应用的问题。 */
   function bodyOf(it) {
-    var cands = [it.text, it.big, it.lines];
+    if (it.body && String(it.body).trim()) return String(it.body).trim();
+    var cands = [it.text, it.big, it.lines, it.ticker, it.sub];
+    var best = '';
     for (var i = 0; i < cands.length; i++) {
       var v = cands[i];
-      if (v && String(v).trim()) return String(v).trim();
+      if (v && String(v).length > best.length) best = String(v);
     }
-    return '';
+    return best.trim();
   }
 
   function titleOf(it) {
     var t = (it.title || '').trim();
+    if (it.unread > 0) t += '（' + it.unread + ' 条未读）';
     if (t) return t;
     var s = (it.sub || '').trim();
     return s || (it.app || it.pkg || '通知');
+  }
+
+  /* 通知渠道：真机核对用（QQ 的真实聊天走「普通消息」，营销走「其它通知 / 推送」） */
+  function chanOf(it) {
+    var c = (it.channel || '');
+    if (!c) return '';
+    if (/SHOW_BADGE/i.test(c)) return '聊天';
+    if (/HIDE_BADGE/i.test(c)) return '仅图标';
+    if (/OTHER/i.test(c)) return '其它';
+    if (/push/i.test(c)) return '推送';
+    return c;
   }
 
   function render(items) {
@@ -84,7 +99,9 @@
         + '<div class="cap-ops">'
         + '<button class="cap-op" data-op="copy" type="button">复制</button>'
         + (it.fields ? '<button class="cap-op" data-op="more" type="button">看原始字段</button>' : '')
-        + '<span class="cap-src">' + esc(it.app || it.pkg || '') + (it.from === 'bar' ? ' · 回捞' : '') + '</span>'
+        + '<span class="cap-src">' + esc(it.app || it.pkg || '')
+        + (chanOf(it) ? ' · ' + esc(chanOf(it)) : '')
+        + (it.from === 'bar' ? ' · 回捞' : '') + '</span>'
         + '</div>'
         + (it.fields ? '<pre class="cap-fields" hidden>' + esc(it.fields) + '</pre>' : '')
         + '</div>';
