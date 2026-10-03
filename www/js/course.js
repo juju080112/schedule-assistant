@@ -144,15 +144,17 @@
     return !!(term.holidays && term.holidays.indexOf(dateKey(dateObj)) >= 0);
   }
 
-  /* v1.9.3：某天到底上哪些课。规则（两个来源都考虑，但优先级明确）：
-     ① 该日有调课（官方教学日历，如「09-20 补周五课」「10-10 补周二课」）：
-        **以调课后的星期为准** —— 那天就上目标星期的课；
-     ② 但若目标星期那天我们手里一节课都没有（说明教务系统已经把课直接挪到本日、
-        按自然星期排好了，例如把「补周二课」排成 10-10 周六的活动，而周二那条的周次里
-        已经不含第 6 周）→ 退回**自然星期**取课，避免格子空白；
-     ③ 没有调课的普通日子 → 自然星期。
-     旧代码只认 ①：教务挪到周六的课被按周二过滤、周二那条又不含第 6 周 → 两头落空，
-     这就是「10 月 10 日明明有课、课表却空白」的根因。 */
+  /* v1.9.3：某天到底上哪些课。**以教务数据为准 + 官方调课规则兜底，两者取并集（去重）**：
+     ① 自然星期：教务自己排在这一天的课。**它自己就会把补课排成当天的活动**
+        （已由 MyUSTC 静态分析证实：MyUSTC 只画 `weekday + weeksArray`，全 App 无校历无调休表，
+        10/10 之所以对，是因为教务返回的那条活动本来就是 weekday=6 且周次含第 6 周）；
+     ② 调课规则：我们按官方教学日历把「10-10 补周二课」映射到该日期后的星期。
+     为什么取并集而不是二选一：
+       - 只认 ②（旧代码）→ 教务把课挪到周六后，周二那条的周次里已不含第 6 周 → 目标星期没课、
+         自然星期又不看 → **两头落空格子空白**（2026-10-10 的实际故障）；
+       - 只认 ① → 教务若**只挪走了一部分**（例如只挪了英语读写、没挪线性代数），
+         没挪的那门当天就再也看不到 → 仍然漏课。
+     并集两边都收：教务挪过来的照原样显示，没挪的按调课规则补上，同一门同节次只算一次。 */
   function coursesOnDate(dateObj, weekNo, term) {
     var nat = isoWeekday(dateObj);
     var eff = effectiveWeekday(dateObj, term);
@@ -167,18 +169,25 @@
         if (seen[k]) continue;
         seen[k] = 1;
         var item = courseBrief(c);
-        /* 只要这天有调课，这天出现的课就都算「补」（不管是从目标星期取的，还是退回自然星期取的） */
+        /* 只要这天有调课，这天出现的课就都算「补」（不管是教务挪来的，还是按调课规则补上的） */
         item.via = (eff !== nat) ? 'adjust' : 'natural';
         item.idx = i;
         out.push(item);
       }
-      out.sort(function (a, b) { return a.startSlot - b.startSlot; });
       return out;
     }
-    var byNat = pick(nat);
-    if (eff === nat) return byNat;
-    var byEff = pick(eff);
-    return byEff.length ? byEff : byNat;
+    var out = pick(nat), seen = {};
+    out.forEach(function (c) { seen[c.name + '|' + c.startSlot + '|' + (c.location || '')] = 1; });
+    if (eff !== nat) {
+      pick(eff).forEach(function (c) {
+        var k = c.name + '|' + c.startSlot + '|' + (c.location || '');
+        if (seen[k]) return;
+        seen[k] = 1;
+        out.push(c);
+      });
+    }
+    out.sort(function (a, b) { return a.startSlot - b.startSlot; });
+    return out;
   }
 
   function slotStartTs(dateObj, slot) {
@@ -792,20 +801,34 @@
     var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(s || ''));
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
   }
-  /* v1.9.3：照抄 MyUSTC 的卡片配色——同一门课恒定一种马卡龙色 + 同色系描边。
-     色值直接从 MyUSTC 5.1.2 真机截图取的像素（直方图里出现最多的那批）。 */
+  /* v1.9.3：照抄 MyUSTC 的卡片配色。MyUSTC 的真身是它自己的 20 色鲜艳色板
+     （`Lpa;.<clinit>`：`#F6C900 #00BCD4 #F72585 …`）用 `Paint.setAlpha(100)`（≈39%）
+     画在白底卡片上，合成出来才是"马卡龙"。下面这些值就是「鲜艳色 × 39% + 白」的合成结果，
+     已用 MyUSTC 真机截图的颜色直方图逐条核对（如 #F6C900→#FBEA9B、#F72585→#FCAACF、
+     #00BCD4→#9BE5EE），因此观感与它一致，又不必依赖背景色。 */
   var CT_PALETTE = [
-    { bg: '#FBEA9B', bd: '#E4CB6B' },   /* 黄 */
-    { bg: '#9BE5EE', bd: '#67C6D4' },   /* 青 */
-    { bg: '#FCAACF', bd: '#EC84B3' },   /* 粉 */
-    { bg: '#9BEFE6', bd: '#68D6C8' },   /* 薄荷 */
-    { bg: '#D6BCF6', bd: '#B493E9' },   /* 紫 */
-    { bg: '#FFB9BA', bd: '#F28C8E' }    /* 珊瑚 */
+    '#FBEA9B',  /* ← #F6C900 黄 */
+    '#9BE5EE',  /* ← #00BCD4 青 */
+    '#FCAACF',  /* ← #F72585 粉 */
+    '#9BEEE6',  /* ← #00D5C0 薄荷 */
+    '#D6BCF6',  /* ← #9654E8 紫 */
+    '#FFB9BA',  /* ← #FF4D4F 珊瑚 */
+    '#9BE3C9',  /* ← #00B875 绿 */
+    '#A8D6FA',  /* ← #2196F3 蓝 */
+    '#FDD0A3',  /* ← #FA8714 橙 */
+    '#E3F39B'   /* ← #B8E000 黄绿 */
   ];
+  /* 同色系描边：把底色按系数压暗（MyUSTC 的卡片也是同色系描边） */
+  function ctShade(hex, f) {
+    var n = parseInt(String(hex).slice(1), 16);
+    var r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
   function ctPaletteOf(name) {
     var h = 0;
     for (var i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return CT_PALETTE[h % CT_PALETTE.length];
+    var bg = CT_PALETTE[h % CT_PALETTE.length];
+    return { bg: bg, bd: ctShade(bg, 0.86) };
   }
   /* 每小节高度 / 课间空隙（CSS px）：量自 MyUSTC 真机截图（物理 px ÷ 4） */
   var CT_SLOT_H = 31, CT_BLOCK_GAP = 5;

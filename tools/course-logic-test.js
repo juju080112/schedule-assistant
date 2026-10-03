@@ -124,8 +124,8 @@ check('9/20 标记为调课', d0920 && /调课/.test(d0920.mark || ''), d0920 ? 
 check('9/20 显示的是周五课（大学生心理学）',
   d0920 && d0920.courses.some((c) => c.name === '大学生心理学'),
   d0920 ? d0920.courses.map((c) => c.name).join(',') : '缺失');
-check('9/20 不显示周日课（周日实验）',
-  d0920 && !d0920.courses.some((c) => c.name === '周日实验'),
+check('9/20 同时保留教务当天排的课（周日实验）——并集规则',
+  d0920 && d0920.courses.some((c) => c.name === '周日实验'),
   d0920 ? d0920.courses.map((c) => c.name).join(',') : '缺失');
 check('9/25 中秋放假且无课', d0925 && d0925.holiday === true && d0925.courses.length === 0,
   d0925 ? `holiday=${d0925.holiday} courses=${d0925.courses.length}` : '缺失');
@@ -139,7 +139,8 @@ check('今天生成了课程日程', todaySess.length > 0, `数量 ${todaySess.l
 check('今天的日程是周五课（大学生心理学）',
   todaySess.some((s) => s.title.includes('大学生心理学')),
   todaySess.map((s) => s.title).join(' | '));
-check('今天的日程不含周日课', !todaySess.some((s) => s.title.includes('周日实验')),
+check('今天的日程 = 调课后的周五课 ∪ 当天课（并集，去重）',
+  todaySess.some((s) => s.title.includes('大学生心理学')) && todaySess.some((s) => s.title.includes('周日实验')),
   todaySess.map((s) => s.title).join(' | '));
 check('大学生心理学时间 15:55-18:20',
   todaySess.some((s) => s.title.includes('大学生心理学') && s.time === '15:55-18:20'),
@@ -198,9 +199,9 @@ check('10/10 该课标记为调课（补）',
   p6fix ? p6fix.courses.map((c) => c.via).join(',') : '缺失');
 check('10/10 不会把周二未排课的节次也塞进来（不多不少）',
   p6fix && p6fix.courses.length === 1, p6fix ? `数量 ${p6fix.courses.length}` : '缺失');
-/* 调课日「目标星期有课」时仍以目标星期为准（9/20 校庆补周五课的老规则不能被破坏） */
+/* 并集规则的边界：调课日仍以「调课后的星期 + 当天」为界，不许把无关课程塞进来 */
 const p4fix = CS.getWeekPlan(4).days.find((d) => d.date === '2026-09-20');
-check('9/20 仍以调课后的周五课表为准（没被回归改坏）',
+check('9/20 调课日不塞无关课程（英语读写I 不在，周五课在）',
   p4fix && p4fix.courses.some((c) => c.name === '大学生心理学') && !p4fix.courses.some((c) => c.name === '英语读写I'),
   p4fix ? p4fix.courses.map((c) => c.name).join(',') : '缺失');
 mem['courseList'] = savedFixtureList;
@@ -243,6 +244,7 @@ if (target) {
 
 /* ===== 7. 课表为空时的健壮性 ===== */
 localStorage.setItem('courseList', JSON.stringify([]));
+localStorage.setItem('todos', JSON.stringify([]));   /* 先清空 todos，否则断言受前面用例残留影响 */
 CS.rollSessions();
 check('空课表不报错且不生成日程', CS.getCourseSessions(4).count === 0);
 check('空课表时 getWeekPlan 仍返回结构', (CS.getWeekPlan(3).days || []).length === 7);
