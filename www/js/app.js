@@ -1104,6 +1104,13 @@ $('btnTestApi').onclick = async () => {
   }
 };
 
+$('btnExportDiag').onclick = () => {
+  try {
+    if (window.CourseSync && window.CourseSync.exportDiagnostics) window.CourseSync.exportDiagnostics();
+    else toast('当前环境不支持导出诊断');
+  } catch (e) { toast('导出失败：' + (e && e.message ? e.message : e)); }
+};
+
 $('btnClearData').onclick = async () => {
   if (!confirm('确定清空所有待办、日程和设置吗？此操作不可恢复。')) return;
   const todos = getTodos();

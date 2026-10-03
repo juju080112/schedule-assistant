@@ -178,6 +178,8 @@ public class TimetableSyncService extends Service {
                 o.put("endSlot", c.optInt("endSlot"));
                 JSONArray weeks = c.optJSONArray("weeks");
                 o.put("weeks", weeks == null ? new JSONArray() : weeks);
+                /* v1.9.6：自定义时间的活动（研讨课等）需要把真实时刻带回网页层 */
+                o.put("customTime", c.optString("customTime"));
                 o.put("raw", "");
                 keep.put(o);
             }

@@ -89,6 +89,7 @@
         <button class="ct-nav" id="ctPrev" type="button" aria-label="上一周">‹</button>
         <button class="ct-now" id="ctNow" type="button">本周</button>
         <button class="ct-nav" id="ctNext" type="button" aria-label="下一周">›</button>
+        <button class="ct-nav" id="ctAll" type="button">全</button>
       </div>
       <div class="ct-grid" id="ctGrid"></div>
     </div>
@@ -128,7 +129,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.4</p>
+      <p class="version">日程助手 v1.9.6</p>
     </div>
   </div>
 
@@ -299,6 +300,12 @@
         </div>
       </div>
       <div class="sub-pane" data-sub="data" hidden>
+        <div class="dm-block">
+          <button class="dm-btn" id="btnExportDiag" type="button">导出课表诊断文件</button>
+          <p class="src-note">把课表原始数据与解析结果写到手机存储的
+            <code>Android/data/com.aitodo.app/files/</code>，用于排查「课表/日程对不上」。
+            只含课程信息，<b>不含账号、密码、Cookie</b>。</p>
+        </div>
         <div class="danger-zone">
           <button class="btn-danger" id="btnClearData">清空所有数据</button>
         </div>

@@ -565,3 +565,23 @@ textarea { resize: none; line-height: 1.6; }
   background: rgba(33, 33, 33, .14); font-size: 8px; line-height: 1.35; color: #212121;
 }
 .ct-empty { padding: 26px 16px; text-align: center; color: var(--text-sub); font-size: 13px; }
+/* v1.9.5：MyUSTC 同款「全」——整学期课程清单（按星期分组） */
+.ct-nav.ct-on { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+.ca-wrap { padding: 8px 10px 16px; }
+.ca-group { margin-bottom: 12px; }
+.ca-gtitle { font-size: 12px; font-weight: 700; color: var(--text); margin: 2px 0 6px; }
+.ca-gtitle span { font-weight: 400; color: var(--text-sub); font-size: 11px; }
+.ca-item {
+  border: 1.5px solid var(--ct-bd, #ccc); border-radius: 8px; background: var(--ct-bg, #eee);
+  padding: 6px 8px; margin-bottom: 6px; color: #212121;
+}
+.ca-name { font-size: 13px; font-weight: 700; color: #212121; }
+.ca-line { font-size: 11px; line-height: 1.45; color: #5a5a5a; }
+.ca-weeks { color: #6b6b6b; }
+/* 数据管理：导出诊断按钮 */
+.dm-block { margin-bottom: 14px; }
+.dm-btn {
+  width: 100%; border: 1px solid var(--border); background: var(--card); color: var(--text);
+  border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 600;
+}
+.dm-btn:active { background: var(--bg-press); }

@@ -441,6 +441,8 @@
       startSlot: ss,
       endSlot: es,
       weeks: weeks,
+      /* v1.9.6：自定义时间的活动（研讨课等）保留真实时刻，卡片上按真实时间显示 */
+      customTime: String(c.customTime || '').trim().slice(0, 20),
       raw: String(c.raw || '').slice(0, 300)
     };
   }
@@ -794,7 +796,61 @@
 
   /* ============ 周课表网格（v1.9.3：排版照抄「我的科大 MyUSTC」） ============ */
   var ctWeekOffset = 0;      /* 相对当前教学周的偏移 */
+  var ctShowAll = false;     /* v1.9.5：MyUSTC 同款「全」——整学期课程清单 */
   var ctBound = false;
+
+  /* 周次文本压缩： [1,2,3,5,7,8] → "1-3,5,7-8 周" */
+  function ctWeeksText(c) {
+    var w = (c && c.weeks) || [];
+    if (!w.length) return '全周';
+    var sorted = w.slice().sort(function (a, b) { return a - b; });
+    var parts = [], s = sorted[0], p = sorted[0];
+    for (var i = 1; i < sorted.length; i++) {
+      if (sorted[i] === p + 1) { p = sorted[i]; continue; }
+      parts.push(s === p ? String(s) : s + '-' + p);
+      s = p = sorted[i];
+    }
+    parts.push(s === p ? String(s) : s + '-' + p);
+    return parts.join(',') + ' 周';
+  }
+
+  /* 「全」视图：整学期课程清单，按星期分组（对应 MyUSTC 的「我的科大·全部课程」） */
+  function renderCourseAll() {
+    var grid = document.getElementById('ctGrid');
+    if (!grid) return;
+    var list = getList();
+    var term = getTerm();
+    var lab = document.getElementById('ctWeekLabel');
+    if (lab) lab.textContent = '全部课程';
+    var rangeEl = document.getElementById('ctWeekRange');
+    if (rangeEl) rangeEl.textContent = (term.label || '') + ' · 共 ' + list.length + ' 门';
+    if (!list.length) {
+      grid.innerHTML = '<div class="ct-empty">还没有课表数据。点右上角「同步」拉取。</div>';
+      return;
+    }
+    var wchar = ['', '一', '二', '三', '四', '五', '六', '日'];
+    var html = '<div class="ca-wrap">';
+    [1, 2, 3, 4, 5, 6, 7].forEach(function (wd) {
+      var items = list.filter(function (c) { return c && c.weekday === wd; })
+        .sort(function (a, b) { return (a.startSlot || 0) - (b.startSlot || 0); });
+      if (!items.length) return;
+      html += '<div class="ca-group"><div class="ca-gtitle">周' + wchar[wd] + ' <span>' + items.length + ' 门</span></div>';
+      items.forEach(function (c) {
+        var pal = ctPaletteOf(c.name);
+        var es = (c.endSlot && c.endSlot >= c.startSlot) ? c.endSlot : c.startSlot;
+        html += '<div class="ca-item" style="--ct-bg:' + pal.bg + ';--ct-bd:' + pal.bd + '">'
+          + '<div class="ca-name">' + escapeHtml(c.name) + '</div>'
+          + '<div class="ca-line">' + (c.customTime ? escapeHtml(c.customTime) : (ctHM(c.startSlot) + '-' + ctEndHM(es) + ' · 第' + c.startSlot + (es !== c.startSlot ? '-' + es : '') + '节')) + '</div>'
+          + (c.teacher ? '<div class="ca-line">' + escapeHtml(c.teacher) + '</div>' : '')
+          + (c.location ? '<div class="ca-line">' + escapeHtml(c.location) + '</div>' : '')
+          + '<div class="ca-line ca-weeks">' + escapeHtml(ctWeeksText(c)) + '</div>'
+          + '</div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    grid.innerHTML = html;
+  }
 
   function ctPad2(n) { return n < 10 ? '0' + n : '' + n; }
   function ctParseDate(s) {
@@ -912,15 +968,23 @@
       ctBound = true;
       var on = function (id, fn) {
         var el = document.getElementById(id);
-        if (el) el.addEventListener('click', function () { ctWeekOffset += fn(); renderCourseTable(); });
+        if (el) el.addEventListener('click', function () { ctShowAll = false; ctWeekOffset += fn(); renderCourseTable(); });
       };
       on('ctPrev', function () { return -1; });
       on('ctNext', function () { return 1; });
       var nowBtn = document.getElementById('ctNow');
-      if (nowBtn) nowBtn.addEventListener('click', function () { renderCourseTable(true); });
+      if (nowBtn) nowBtn.addEventListener('click', function () { ctShowAll = false; renderCourseTable(true); });
+      /* v1.9.5：照抄 MyUSTC 的「全」——整学期课程清单（按星期分组），再点回到周网格 */
+      var allBtn = document.getElementById('ctAll');
+      if (allBtn) allBtn.addEventListener('click', function () {
+        ctShowAll = !ctShowAll;
+        if (allBtn.classList) allBtn.classList.toggle('ct-on', ctShowAll);
+        renderCourseTable();
+      });
       var syncBtn = document.getElementById('btnCtSync');
       if (syncBtn) syncBtn.addEventListener('click', function () { sync(); });
     }
+    if (ctShowAll) { renderCourseAll(); return; }
 
     var term = getTerm();
     var list = getList();
@@ -978,13 +1042,13 @@
           var pal = ctPaletteOf(c.name);
           html += '<div class="ct-block" style="top:' + top + 'px;height:' + h + 'px;--ct-bg:' + pal.bg + ';--ct-bd:' + pal.bd
             + '" data-idx="' + c.idx + '" data-day="' + dayKey + '">'
-            + '<span class="ct-btime">' + ctHM(c.startSlot) + '</span>'
+            + '<span class="ct-btime">' + (c.customTime ? escapeHtml(c.customTime.split('-')[0]) : ctHM(c.startSlot)) + '</span>'
             + '<span class="ct-bname">' + escapeHtml(c.name)
             + (c.via === 'adjust' ? '<i class="ct-badj">补</i>' : '') + '</span>'
             + (c.teacher ? '<span class="ct-bmeta">' + escapeHtml(c.teacher) + '</span>' : '')
             + '<span class="ct-bmeta">' + c.startSlot + (c.endSlot !== c.startSlot ? '-' + c.endSlot : '') + '节</span>'
             + (c.location ? '<span class="ct-broom">' + escapeHtml(c.location) + '</span>' : '')
-            + '<span class="ct-bend">' + ctEndHM(c.endSlot) + '</span>'
+            + '<span class="ct-bend">' + (c.customTime ? escapeHtml(c.customTime.split('-')[1] || '') : ctEndHM(c.endSlot)) + '</span>'
             + '</div>';
         });
       }
@@ -1014,7 +1078,9 @@
       name: c.name, teacher: c.teacher, location: c.location,
       weekday: c.weekday, weekdayText: WD_LABEL[c.weekday],
       startSlot: c.startSlot, endSlot: c.endSlot,
-      time: slotTimeText(c.startSlot, c.endSlot),
+      /* v1.9.6：研讨课这类自定义时间的活动，按教务给的真实时刻显示 */
+      customTime: c.customTime || '',
+      time: c.customTime ? c.customTime : slotTimeText(c.startSlot, c.endSlot),
       weeks: (c.weeks && c.weeks.length) ? c.weeks : '每周',
       weeksText: (c.weeks && c.weeks.length) ? (c.weeks[0] + '-' + c.weeks[c.weeks.length - 1] + ' 周') : '全周'
     };
@@ -1104,6 +1170,37 @@
     };
   }
 
+  /* ============ 导出诊断（v1.9.5） ============
+     把「原始教务 JSON + 解析后的课表 + 校历 + 逐周计划 + 抓取诊断」写成一个文本文件，
+     交给原生落到应用外部目录（Android/data/<包名>/files/），电脑用 adb 就能取走排查。
+     只含课程信息；账号、密码、Cookie、Token 一概不取。 */
+  function exportDiagnostics() {
+    var p = coursePlugin();
+    if (!p || !p.dumpDiagnostics) { toast('当前环境不支持导出诊断（需在 App 内运行）'); return; }
+    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.5' };
+    try { payload.term = getTerm(); } catch (e) {}
+    try { payload.courses = getList(); } catch (e) {}
+    try { payload.syncedAt = getSyncAt() ? new Date(getSyncAt()).toISOString() : null; } catch (e) {}
+    try { payload.backendSyncAt = getBackendSyncAt() ? new Date(getBackendSyncAt()).toISOString() : null; } catch (e) {}
+    try { payload.lastUrl = store.get(K_URL, '') || null; } catch (e) {}
+    try { payload.debug = store.get(K_DEBUG, null); } catch (e) {}
+    try { payload.rawUstc = store.get(K_RAW, null); } catch (e) {}
+    /* 逐周计划：直接反映「当前算法在这几周看到了什么」，含调课标记 */
+    try {
+      var plans = {}, cur = Math.min(Math.max(ctCurrentWeekNo(), 1), getTerm().totalWeeks || 20);
+      for (var w = Math.max(1, cur - 1); w <= Math.min(getTerm().totalWeeks || 20, cur + 2); w++) {
+        plans['第' + w + '周'] = getWeekPlan(w);
+      }
+      payload.weekPlans = plans;
+    } catch (e) { payload.weekPlansError = String(e); }
+    var text;
+    try { text = JSON.stringify(payload, null, 1); } catch (e) { text = 'JSON 序列化失败：' + e; }
+    toast('正在导出…');
+    p.dumpDiagnostics({ name: 'aitodo-diagnose', text: text }).then(function (r) {
+      toast(r && r.ok ? ('已导出：' + r.path) : ('导出失败：' + (r && r.error ? r.error : '未知')));
+    }).catch(function (e) { toast('导出失败：' + (e && e.message ? e.message : e)); });
+  }
+
   /* ============ 对外接口（供 app.js 调用） ============ */
   global.CourseSync = {
     init: init,
@@ -1130,6 +1227,10 @@
     renderScheduleHeader: renderScheduleHeader,
     loadSettingsUI: loadSettingsUI,
     renderCourseTable: renderCourseTable,
+    /* v1.9.6：切换周网格 / 整学期「全」列表（供自动化验证与后续入口复用） */
+    showAll: function (on) { ctShowAll = !!on; renderCourseTable(); return ctShowAll; },
+    isShowingAll: function () { return ctShowAll; },
+    exportDiagnostics: exportDiagnostics,     /* v1.9.5：导出课表诊断（设置→数据管理） */
     /* 清空所有数据时调用（设置页「清空所有数据」） */
     purge: function () {
       cancelAllCourseNotifications(); /* 空课表 → 原生取消全部课程提醒 */

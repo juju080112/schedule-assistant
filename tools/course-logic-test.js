@@ -284,6 +284,28 @@ localStorage.setItem('courseList', JSON.stringify([psy]));
 CS.rollSessions();
 check('课表恢复后可再次生成（不被永久关闭）', existsPsy());
 
+/* ===== 9b. v1.9.6：「全」视图渲染（整学期清单，按星期分组）===== */
+(() => {
+  const cap = { innerHTML: '', textContent: '', hidden: false, addEventListener: noop, querySelectorAll: () => [], classList: { toggle: noop } };
+  const orig = global.document.getElementById;
+  global.document.getElementById = (id) => (id === 'ctGrid' ? cap : fakeEl());
+  const before = localStorage.getItem('courseList');
+  localStorage.setItem('courseList', JSON.stringify([
+    { name: '甲课', teacher: 'A老师', location: '101', weekday: 1, startSlot: 1, endSlot: 2, weeks: [1, 2, 3, 5], raw: '' },
+    { name: '研讨课', teacher: 'B老师', location: '咖啡馆', weekday: 3, startSlot: 5, endSlot: 6, weeks: [5], customTime: '11:30-13:30', raw: '' }
+  ]));
+  CS.showAll(true);
+  const html = cap.innerHTML;
+  check('「全」视图列出课程与星期分组',
+    html.includes('甲课') && html.includes('研讨课') && html.includes('周一') && html.includes('周三'),
+    html.length + ' 字节');
+  check('「全」视图周次压缩成区间文本', html.includes('1-3,5 周'), (html.match(/1-3,5 周/) || ['未找到'])[0]);
+  check('「全」视图显示自定义时间', html.includes('11:30-13:30'));
+  check('能切回周网格', CS.showAll(false) === false && CS.isShowingAll() === false);
+  global.document.getElementById = orig;
+  if (before === null) localStorage.removeItem('courseList'); else localStorage.setItem('courseList', before);
+})();
+
 /* ===== 10. v1.8.20：采纳原生后台同步（每日 06:30）的结果 ===== */
 const asyncChecks = (async () => {
   const backendCourses = [

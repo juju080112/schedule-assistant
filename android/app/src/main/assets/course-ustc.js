@@ -211,7 +211,21 @@
       var eu = parseInt(a.endUnit, 10) || 0;
       var name = trimStr(a.courseName) || trimStr(a.lessonName) || trimStr(a.lessonCode);
       if (!name) return;
-      if (!(su >= 1)) return;            /* 无节次的自定义活动不进网格 */
+      /* v1.9.6：节次为 0 的活动（研讨课、自定义时间）不能整条丢掉。
+         MyUSTC 同款降级链：用 startDate/endDate 里的**时刻**反推节次，推不出来才放弃。
+         实测：https://jw.ustc.edu.cn 返回的「“科学与社会”研讨课」weekday=1、startUnit=0、
+         selfDefineDate=true、11:30-13:30、仅第 5 周 —— 旧版把它扔了，课表里就少了这门课。 */
+      var customTime = '';
+      if (!(su >= 1)) {
+        var s2 = timeToSlot(a.startDate);
+        var e2 = timeToSlot(a.endDate);
+        if (s2) {
+          su = s2;
+          eu = (e2 && e2 >= s2) ? e2 : s2;
+          customTime = trimStr(a.startDate) + '-' + trimStr(a.endDate);
+        }
+      }
+      if (!(su >= 1)) return;
       if (!(eu >= su)) eu = su;
       if (su > 13) return;
       if (eu > 13) eu = 13;
@@ -239,6 +253,7 @@
         startSlot: su,
         endSlot: eu,
         weeks: weeks,
+        customTime: customTime,
         raw: raw
       });
     });

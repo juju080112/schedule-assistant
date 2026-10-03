@@ -70,6 +70,23 @@ public class CoursePlugin extends Plugin {
         });
     }
 
+    /**
+     * v1.9.5：从外部触发「导出诊断」（`adb shell am start -a com.aitodo.app.EXPORT_DIAG -n com.aitodo.app/.MainActivity`）。
+     * 等网页层就绪后调用 window.CourseSync.exportDiagnostics()，把原始课表 JSON 与解析结果写到外部目录，
+     * 方便用 adb 取走排查（不经过设置界面，避免误触其他按钮）。
+     */
+    public static void requestExport() {
+        MAIN.postDelayed(() -> {
+            try {
+                android.webkit.WebView wv = liveWebView == null ? null : liveWebView.get();
+                if (wv == null) return;
+                wv.evaluateJavascript(
+                        "(function(){try{if(window.CourseSync&&window.CourseSync.exportDiagnostics){window.CourseSync.exportDiagnostics();}}catch(e){}})();",
+                        null);
+            } catch (Throwable ignored) {}
+        }, 3500);
+    }
+
     /** 打开教务登录窗口。resolve 时带回抓取结果 JSON 与抓取页地址 */
     @PluginMethod
     public void openLogin(PluginCall call) {
@@ -199,6 +216,48 @@ public class CoursePlugin extends Plugin {
             }
         } catch (Exception ignored) {}
         ret.put("raw", raw);
+        call.resolve(ret);
+    }
+
+    /**
+     * v1.9.5 导出课表诊断：把网页层传来的文本写进**应用外部目录**
+     * （Android/data/<包名>/files/，adb 可直接 pull），同时把最近一次抓取的原始报告
+     * course_raw.json（在私有目录，adb 读不到）一并复制过去。
+     * 只含课程信息，不读也不写任何凭据。
+     */
+    @PluginMethod
+    public void dumpDiagnostics(PluginCall call) {
+        JSObject ret = new JSObject();
+        String text = call.getString("text", "");
+        String name = call.getString("name", "diagnose");
+        try {
+            java.io.File dir = getContext().getExternalFilesDir(null);
+            if (dir == null) dir = getContext().getFilesDir();
+            if (!dir.exists()) dir.mkdirs();
+            String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date());
+            java.io.File out = new java.io.File(dir, name + "-" + stamp + ".txt");
+            try (java.io.FileOutputStream fo = new java.io.FileOutputStream(out)) {
+                fo.write(text.getBytes("UTF-8"));
+            }
+            /* 顺手把原始抓取报告（私有目录）也复制到外部目录，省得再想办法取 */
+            try {
+                java.io.File raw = new java.io.File(getContext().getFilesDir(), CourseLoginActivity.RAW_FILE);
+                if (raw.exists()) {
+                    java.io.File rawOut = new java.io.File(dir, "course_raw-" + stamp + ".json");
+                    try (java.io.FileInputStream fi = new java.io.FileInputStream(raw);
+                         java.io.FileOutputStream fo2 = new java.io.FileOutputStream(rawOut)) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = fi.read(buf)) > 0) fo2.write(buf, 0, n);
+                    }
+                }
+            } catch (Exception ignored) {}
+            ret.put("ok", true);
+            ret.put("path", out.getAbsolutePath());
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+        }
         call.resolve(ret);
     }
 
