@@ -1062,7 +1062,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* 设置页：主菜单 → 全屏子页（v1.6.0） */
-const SUB_TITLES = { ai: 'AI 配置', course: '课表同步', notify: '通知与提醒', capture: '消息采集', guide: '使用指南', data: '数据管理' };
+const SUB_TITLES = { ai: 'AI 配置', course: '课表同步', notify: '通知与提醒', guide: '使用指南', data: '数据管理' };
 function openSettingsSub(key) {
   document.querySelectorAll('.sub-pane').forEach((p) => { p.hidden = p.dataset.sub !== key; });
   $('subTitle').textContent = SUB_TITLES[key] || '设置';
@@ -1073,10 +1073,6 @@ function openSettingsSub(key) {
   }
   // v1.8.1：打开使用指南时做一次权限自检
   if (key === 'guide') refreshGuide();
-  // v1.9.0：打开消息采集子页时读取采集状态与已采列表
-  if (key === 'capture' && window.AiTodoCapture) {
-    try { window.AiTodoCapture.open(); } catch (e) {}
-  }
 }
 function closeSettingsSub() {
   $('settingsSub').hidden = true;
@@ -1114,8 +1110,6 @@ $('btnClearData').onclick = async () => {
   for (const t of todos) await cancelNotification(t);
   // v1.7.0：课表数据与课程提醒一并清除
   try { if (window.CourseSync) window.CourseSync.purge(); } catch (e) {}
-  // v1.9.0：消息采集的内容存在原生侧（不在 localStorage），一并清空
-  try { if (window.AiTodoCapture) window.AiTodoCapture.purge(); } catch (e) {}
   localStorage.clear();
   loadSettingsUI();
   renderSchedule();

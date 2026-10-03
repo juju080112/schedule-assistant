@@ -62,22 +62,8 @@
 - **AI 配置**：API Key、文本模型、图片理解模型、连通性测试（见下节）
 - **课表同步**：隐私说明、已同步课表预览、开关、清除本地课表数据
 - **通知与提醒**：常驻今日日程栏开关
-- **消息采集**：QQ 通知采集开关、授权状态、已采列表、清空（见下节，实验特性）
 - **使用指南**：权限自检（通知 / 精确闹钟 / 电池白名单，一键跳系统设置）+ 各品牌后台放行步骤
 - **数据管理**：清空所有数据
-
-### 📥 消息采集（实验特性，v1.9.0）
-
-用 Android 系统的**通知使用权**把 QQ 弹出来的通知原样记在本机，用来先核对「到底能收到什么」，再决定要不要往下做自动整理。
-
-- 只读系统通知，**不碰 QQ 本体**：不 hook、不注入、不解密任何数据库，也不自动操作 QQ 界面
-- 数据只写本机（原生 `SharedPreferences`，最多 150 条 / 最近 7 天），**不发网络**，也不会自动创建任何日程
-- 每条都能展开看**完整通知字段**——这是本版本的主要用途：换真机核对正文到底放在哪个字段
-- 一键复制，粘到「解析」页或「AI 助手」里，由你自己决定要不要变成日程
-- 收不到的情况（不是 bug）：那个群在 QQ 里被设成**免打扰**、正在 QQ 里看着这个群、开启之前的历史消息、图片/文件/语音（通知里只有「[图片]」这类占位）
-- 采集开关与「清空已采集」都在设置页；「清空所有数据」会连采集内容一起清
-
-> ⚠️ 这个功能在 v1.9.0 刚落地，**尚未经真机验证**：不同 ROM 与 QQ 版本会把消息正文放在不同字段，实际覆盖率需要实测。
 
 ---
 
@@ -285,19 +271,7 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 
 ### ⚙️ Settings
 - **Appearance**: light / dark / follow system
-- **AI config**, **Timetable**, **Notifications**, **Message capture** (experimental, see below), **User guide** (permission self-check + per-brand background whitelisting), **Data management**
-
-### 📥 Message capture (experimental, v1.9.0)
-
-Uses the system **notification access** permission to record QQ's own notifications on-device, purely to verify what is observable before automating anything.
-
-- Read-only: no hooking, no injection, no database decryption, no UI automation of QQ
-- Stored on-device only (native `SharedPreferences`, up to 150 entries / 7 days); nothing is uploaded and no event is created automatically
-- Every entry can be expanded to show the **raw notification fields** — the whole point of this release
-- One tap to copy, so you decide whether it becomes an event via the parse page or the AI assistant
-- Not captured (by design, not a bug): chats muted inside QQ, chats you are currently viewing, anything from before it was enabled, and image/file/voice messages (their notifications only carry placeholders like "[Image]")
-
-> ⚠️ Just landed in v1.9.0 and **not yet verified on a real device**: different ROMs and QQ builds put the message body in different notification fields, so actual coverage needs field testing.
+- **AI config**, **Timetable**, **Notifications**, **User guide** (permission self-check + per-brand background whitelisting), **Data management**
 
 ## AI configuration
 
