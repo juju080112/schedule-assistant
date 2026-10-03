@@ -176,6 +176,35 @@ check('10/11 周日恢复正常上课', p7sun && !p7sun.holiday && p7sun.courses
 const p4mon = CS.getWeekPlan(4).days.find((d) => d.date === '2026-09-21');
 check('9/21(周一) 正常日无调课标记', p4mon && !p4mon.mark && !p4mon.holiday, p4mon ? `mark=${p4mon.mark || '(空)'}` : '缺失');
 
+/* ===== 4b. 回归（2026-10-03 用户实测报的 bug）=====
+   现象：10/10（周六·补周二课）格子空白，而 MyUSTC 正常。
+   真因：教务系统自己就把这次补课排成了「周六的活动」，同时周二那条的周次里**不含第 6 周**。
+        旧代码只按「调课后的星期 = 周二」取课 → 目标星期没课、自然星期又不看 → 两头落空。
+   新规则：调课日优先按调课后的星期取课；该星期一门都没有时退回自然星期。 */
+const savedFixtureList = localStorage.getItem('courseList');
+mem['courseList'] = JSON.stringify([
+  { name: '大学生心理学', teacher: '张老师', location: '1102', weekday: 5, startSlot: 8, endSlot: 10, weeks: Array.from({ length: 20 }, (_, i) => i + 1), raw: '' },
+  /* 周二那条：教务已把第 6 周这次课挪走，所以周次里没有 6 */
+  { name: '英语读写I', teacher: '陈澄', location: '3A409', weekday: 2, startSlot: 1, endSlot: 2, weeks: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], raw: '' },
+  /* 教务把补课直接排成周六的活动 */
+  { name: '英语读写I', teacher: '陈澄', location: '3A409', weekday: 6, startSlot: 1, endSlot: 2, weeks: [6], raw: '' }
+]);
+const p6fix = CS.getWeekPlan(6).days.find((d) => d.date === '2026-10-10');
+check('10/10 补课已挪到周六时不再空白（回归）',
+  p6fix && p6fix.courses.some((c) => c.name === '英语读写I'),
+  p6fix ? (p6fix.courses.map((c) => c.name).join(',') || '空白') : '缺失');
+check('10/10 该课标记为调课（补）',
+  p6fix && p6fix.courses.some((c) => c.name === '英语读写I' && c.via === 'adjust'),
+  p6fix ? p6fix.courses.map((c) => c.via).join(',') : '缺失');
+check('10/10 不会把周二未排课的节次也塞进来（不多不少）',
+  p6fix && p6fix.courses.length === 1, p6fix ? `数量 ${p6fix.courses.length}` : '缺失');
+/* 调课日「目标星期有课」时仍以目标星期为准（9/20 校庆补周五课的老规则不能被破坏） */
+const p4fix = CS.getWeekPlan(4).days.find((d) => d.date === '2026-09-20');
+check('9/20 仍以调课后的周五课表为准（没被回归改坏）',
+  p4fix && p4fix.courses.some((c) => c.name === '大学生心理学') && !p4fix.courses.some((c) => c.name === '英语读写I'),
+  p4fix ? p4fix.courses.map((c) => c.name).join(',') : '缺失');
+mem['courseList'] = savedFixtureList;
+
 /* ===== 5. 单双周 ===== */
 const plan1 = CS.getWeekPlan(1);
 const w1wed = plan1.days.find((d) => d.date === '2026-09-02');

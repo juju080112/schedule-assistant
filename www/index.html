@@ -82,10 +82,13 @@
     </header>
     <div class="content ct-content">
       <div class="ct-weekbar">
-        <button class="ct-nav" id="ctPrev" type="button">‹ 上一周</button>
-        <div class="ct-weeklabel" id="ctWeekLabel">—</div>
-        <button class="ct-nav" id="ctNext" type="button">下一周 ›</button>
+        <div class="ct-weekinfo">
+          <div class="ct-weeklabel" id="ctWeekLabel">—</div>
+          <div class="ct-range" id="ctWeekRange">—</div>
+        </div>
+        <button class="ct-nav" id="ctPrev" type="button" aria-label="上一周">‹</button>
         <button class="ct-now" id="ctNow" type="button">本周</button>
+        <button class="ct-nav" id="ctNext" type="button" aria-label="下一周">›</button>
       </div>
       <div class="ct-grid" id="ctGrid"></div>
     </div>
@@ -125,7 +128,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.2</p>
+      <p class="version">日程助手 v1.9.3</p>
     </div>
   </div>
 

@@ -144,6 +144,43 @@
     return !!(term.holidays && term.holidays.indexOf(dateKey(dateObj)) >= 0);
   }
 
+  /* v1.9.3：某天到底上哪些课。规则（两个来源都考虑，但优先级明确）：
+     ① 该日有调课（官方教学日历，如「09-20 补周五课」「10-10 补周二课」）：
+        **以调课后的星期为准** —— 那天就上目标星期的课；
+     ② 但若目标星期那天我们手里一节课都没有（说明教务系统已经把课直接挪到本日、
+        按自然星期排好了，例如把「补周二课」排成 10-10 周六的活动，而周二那条的周次里
+        已经不含第 6 周）→ 退回**自然星期**取课，避免格子空白；
+     ③ 没有调课的普通日子 → 自然星期。
+     旧代码只认 ①：教务挪到周六的课被按周二过滤、周二那条又不含第 6 周 → 两头落空，
+     这就是「10 月 10 日明明有课、课表却空白」的根因。 */
+  function coursesOnDate(dateObj, weekNo, term) {
+    var nat = isoWeekday(dateObj);
+    var eff = effectiveWeekday(dateObj, term);
+    var list = getList();
+    function pick(wd) {
+      var out = [], seen = {};
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (!c || !c.startSlot || c.weekday !== wd) continue;
+        if (c.weeks && c.weeks.length && c.weeks.indexOf(weekNo) < 0) continue;
+        var k = c.name + '|' + c.startSlot + '|' + (c.location || '');
+        if (seen[k]) continue;
+        seen[k] = 1;
+        var item = courseBrief(c);
+        /* 只要这天有调课，这天出现的课就都算「补」（不管是从目标星期取的，还是退回自然星期取的） */
+        item.via = (eff !== nat) ? 'adjust' : 'natural';
+        item.idx = i;
+        out.push(item);
+      }
+      out.sort(function (a, b) { return a.startSlot - b.startSlot; });
+      return out;
+    }
+    var byNat = pick(nat);
+    if (eff === nat) return byNat;
+    var byEff = pick(eff);
+    return byEff.length ? byEff : byNat;
+  }
+
   function slotStartTs(dateObj, slot) {
     var t = SLOT_START[slot - 1];
     if (!t) return null;
@@ -271,11 +308,10 @@
       if (isHoliday(d, term)) continue;
       var wn = weekNoOf(d, term);
       if (wn < 1 || wn > (term.totalWeeks || 20)) continue;
-      var wd = effectiveWeekday(d, term);
-      for (var j = 0; j < list.length; j++) {
-        var c = list[j];
-        if (!c || c.weekday !== wd || !c.startSlot) continue;
-        if (c.weeks && c.weeks.length && c.weeks.indexOf(wn) < 0) continue;
+      /* v1.9.3：与课表网格同源——自然星期与调课表并集，调课日（如 10-10 补周二课）照样生成日程与提醒 */
+      var todays = coursesOnDate(d, wn, term);
+      for (var j = 0; j < todays.length; j++) {
+        var c = todays[j];
         var key = c.name + '|' + dateKey(d) + '|' + c.startSlot;
         var endSlot = (c.endSlot && c.endSlot >= c.startSlot) ? c.endSlot : c.startSlot;
         var st = slotStartTs(d, c.startSlot);
@@ -747,22 +783,41 @@
     try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
   }
 
-  /* ============ 周课表网格（v1.7.3，MyUSTC 式） ============ */
+  /* ============ 周课表网格（v1.9.3：排版照抄「我的科大 MyUSTC」） ============ */
   var ctWeekOffset = 0;      /* 相对当前教学周的偏移 */
-  var CT_ROW_H = 46;         /* 每小节行高 px */
   var ctBound = false;
-  var CT_COLORS = ['#4C7DF0', '#00B386', '#F0806B', '#9A6BF0', '#E6A23C', '#31A9CE', '#D2699C', '#6B9F3C'];
 
   function ctPad2(n) { return n < 10 ? '0' + n : '' + n; }
   function ctParseDate(s) {
     var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(s || ''));
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
   }
-  function ctColorOf(name) {
+  /* v1.9.3：照抄 MyUSTC 的卡片配色——同一门课恒定一种马卡龙色 + 同色系描边。
+     色值直接从 MyUSTC 5.1.2 真机截图取的像素（直方图里出现最多的那批）。 */
+  var CT_PALETTE = [
+    { bg: '#FBEA9B', bd: '#E4CB6B' },   /* 黄 */
+    { bg: '#9BE5EE', bd: '#67C6D4' },   /* 青 */
+    { bg: '#FCAACF', bd: '#EC84B3' },   /* 粉 */
+    { bg: '#9BEFE6', bd: '#68D6C8' },   /* 薄荷 */
+    { bg: '#D6BCF6', bd: '#B493E9' },   /* 紫 */
+    { bg: '#FFB9BA', bd: '#F28C8E' }    /* 珊瑚 */
+  ];
+  function ctPaletteOf(name) {
     var h = 0;
     for (var i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return CT_COLORS[h % CT_COLORS.length];
+    return CT_PALETTE[h % CT_PALETTE.length];
   }
+  /* 每小节高度 / 课间空隙（CSS px）：量自 MyUSTC 真机截图（物理 px ÷ 4） */
+  var CT_SLOT_H = 31, CT_BLOCK_GAP = 5;
+  function ctMD(d) { return ctPad2(d.getMonth() + 1) + '-' + ctPad2(d.getDate()); }
+  function ctHM(slot) { var t = SLOT_START[slot - 1]; return t ? ctPad2(t[0]) + ':' + ctPad2(t[1]) : ''; }
+  function ctEndHM(slot) {
+    var t = SLOT_START[slot - 1];
+    if (!t) return '';
+    var m = t[0] * 60 + t[1] + SLOT_MINUTES;
+    return ctPad2(Math.floor(m / 60)) + ':' + ctPad2(m % 60);
+  }
+
   function ctCurrentWeekNo() {
     var t = getTerm();
     var w1 = ctParseDate(t.week1Sunday);
@@ -858,28 +913,28 @@
     if (lab) lab.textContent = '第 ' + view + ' 周' + (view === cur ? ' · 本周' : '');
 
     var w1 = ctParseDate(term.week1Sunday) || new Date();
-    /* v1.8.3：教务课表的一周是「周日 → 周六」，表格按周一…周日排列，
-       其中「周日」列显示的是本周的周日（即周一的前一天），不是下个周日。
-       例：第 4 周为 周日 09-20、周一 09-21 … 周六 09-26。 */
+    /* v1.9.3：列顺序照抄 MyUSTC 与教务处教学日历——一周是「周日 → 周六」，周日在最左，
+       日期从左到右递增。旧版把周日放在最右显示本周周日，时间顺序是乱的。 */
     var weekSun = new Date(w1.getFullYear(), w1.getMonth(), w1.getDate() + (view - 1) * 7);
-    var mon = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + 1);
+    var weekSat = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + 6);
+    var rangeEl = document.getElementById('ctWeekRange');
+    if (rangeEl) rangeEl.textContent = ctMD(weekSun) + ' ~ ' + ctMD(weekSat);
+
+    if (!list.length) {
+      grid.innerHTML = '<div class="ct-empty">还没有课表数据。点右上角「同步」，在弹出的教务页面里登录一次即可。<br>当前学期：'
+        + escapeHtml(term.label || '—') + '</div>';
+      return;
+    }
+
     var now = new Date();
     var todayKey = now.getFullYear() + '-' + now.getMonth() + '-' + now.getDate();
-
-    var dowNames = ['一', '二', '三', '四', '五', '六', '日'];
+    var dowNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     var weekChar = ['', '一', '二', '三', '四', '五', '六', '日'];
-    var html = '<div class="ct-timecol"><div class="ct-corner">' + (mon.getMonth() + 1) + '月</div>';
-    for (var s = 1; s <= 13; s++) {
-      var st = SLOT_START[s - 1];
-      html += '<div class="ct-slot">' + s + '<small>' + st[0] + ':' + ctPad2(st[1]) + '</small></div>';
-    }
-    html += '</div><div class="ct-days">';
-    for (var d = 1; d <= 7; d++) {
-      /* 周一~周六 = 本周周日 + d 天；周日 = 本周周日当天 */
-      var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + (d === 7 ? 0 : d));
+    var html = '<div class="ct-days">';
+    for (var d = 0; d <= 6; d++) {
+      var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + d);
       var dayKey = dateKey(dayDate);
-      /* v1.8.15：课程表也要遵循官方调课与放假，才能和日程/提醒一致
-         例：2026-09-20（周日）校庆补周五课；2026-09-25（周五）中秋放假 */
+      /* v1.8.15：课程表遵循官方调课与放假（例：2026-09-20 周日校庆补周五课；2026-09-25 中秋放假） */
       var off = isHoliday(dayDate, term);
       var eff = effectiveWeekday(dayDate, term);
       var natural = isoWeekday(dayDate);
@@ -888,20 +943,25 @@
       else if (eff !== natural) { mark = '补周' + weekChar[eff] + '课'; markCls = 'ct-mark'; }
       var isToday = (dayDate.getFullYear() + '-' + dayDate.getMonth() + '-' + dayDate.getDate()) === todayKey;
       html += '<div class="ct-day' + (isToday ? ' ct-today' : '') + (off ? ' ct-holiday' : '') + '">'
-        + '<div class="ct-dayhead">' + dowNames[d - 1]
-        + '<small>' + (dayDate.getMonth() + 1) + '/' + dayDate.getDate()
+        + '<div class="ct-dayhead"><b>' + dowNames[d] + '</b><small>'
+        + (dayDate.getMonth() + 1) + '/' + dayDate.getDate()
         + (mark ? '<span class="' + markCls + '"> · ' + mark + '</span>' : '')
-        + '</small></div>'
-        + '<div class="ct-daybody">';
+        + '</small></div><div class="ct-daybody">';
       if (!off) {
-        list.forEach(function (c, idx) {
-          if (!c || c.weekday !== eff) return;   /* 按「调课后的实际星期」排课 */
-          if (c.weeks && c.weeks.length && c.weeks.indexOf(view) < 0) return;
-          var top = (c.startSlot - 1) * CT_ROW_H;
-          var h = (c.endSlot - c.startSlot + 1) * CT_ROW_H - 3;
-          html += '<div class="ct-block" style="top:' + top + 'px;height:' + h + 'px;background:' + ctColorOf(c.name) + '" data-idx="' + idx + '" data-day="' + dayKey + '">'
-            + '<span class="ct-bname">' + escapeHtml(c.name) + '</span>'
-            + (c.location ? '<span class="ct-broom">@' + escapeHtml(c.location) + '</span>' : '')
+        /* 自然星期 + 调课表取并集：教务自己排的补课与我们的调休表都不漏 */
+        coursesOnDate(dayDate, view, term).forEach(function (c) {
+          var top = (c.startSlot - 1) * CT_SLOT_H + 1;
+          var h = (c.endSlot - c.startSlot + 1) * CT_SLOT_H - CT_BLOCK_GAP;
+          var pal = ctPaletteOf(c.name);
+          html += '<div class="ct-block" style="top:' + top + 'px;height:' + h + 'px;--ct-bg:' + pal.bg + ';--ct-bd:' + pal.bd
+            + '" data-idx="' + c.idx + '" data-day="' + dayKey + '">'
+            + '<span class="ct-btime">' + ctHM(c.startSlot) + '</span>'
+            + '<span class="ct-bname">' + escapeHtml(c.name)
+            + (c.via === 'adjust' ? '<i class="ct-badj">补</i>' : '') + '</span>'
+            + (c.teacher ? '<span class="ct-bmeta">' + escapeHtml(c.teacher) + '</span>' : '')
+            + '<span class="ct-bmeta">' + c.startSlot + (c.endSlot !== c.startSlot ? '-' + c.endSlot : '') + '节</span>'
+            + (c.location ? '<span class="ct-broom">' + escapeHtml(c.location) + '</span>' : '')
+            + '<span class="ct-bend">' + ctEndHM(c.endSlot) + '</span>'
             + '</div>';
         });
       }
@@ -943,11 +1003,8 @@
     var eff = effectiveWeekday(dateObj, term);
     var nat = isoWeekday(dateObj);
     var weekChar = ['', '一', '二', '三', '四', '五', '六', '日'];
-    var courses = getList().filter(function (c) {
-      if (!c || c.weekday !== eff) return false;
-      if (c.weeks && c.weeks.length && c.weeks.indexOf(weekNo) < 0) return false;
-      return true;
-    }).map(courseBrief);
+    /* v1.9.3：与课表网格同源——自然星期 + 调课表并集，AI 读到的和用户看到的一致 */
+    var courses = off ? [] : coursesOnDate(dateObj, weekNo, term);
     return {
       date: dateKey(dateObj),
       naturalWeekdayText: '周' + weekChar[nat],
@@ -982,11 +1039,11 @@
     var wk = Math.min(Math.max(parseInt(weekNo, 10) || ctCurrentWeekNo(), 1), total);
     var w1 = ctParseDate(term.week1Sunday);
     if (!w1) return { ok: false, error: '校历缺少第 1 周周日' };
-    /* 与课表网格一致：列为 周一…周日，其中「周日」= 本周周日（周一的前一天） */
+    /* 与课表网格一致：列顺序为 周日 周一 … 周六（周日在最左，日期从左到右递增） */
     var weekSun = new Date(w1.getFullYear(), w1.getMonth(), w1.getDate() + (wk - 1) * 7);
     var days = [];
-    for (var d = 1; d <= 7; d++) {
-      var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + (d === 7 ? 0 : d));
+    for (var d = 0; d <= 6; d++) {
+      var dayDate = new Date(weekSun.getFullYear(), weekSun.getMonth(), weekSun.getDate() + d);
       days.push(dayPlan(dayDate, wk));
     }
     return { ok: true, week: wk, isCurrentWeek: wk === Math.min(Math.max(ctCurrentWeekNo(), 1), total), days: days };

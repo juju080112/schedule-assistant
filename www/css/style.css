@@ -502,50 +502,66 @@ textarea { resize: none; line-height: 1.6; }
 .src-img { width: 100%; border-radius: 12px; display: block; }
 .src-note { font-size: 13px; color: var(--text-sub); line-height: 1.6; }
 
-/* ===== 课程表模块（v1.7.3，MyUSTC 式周课表网格） ===== */
-/* v1.7.9：顶栏固定（不再用 relative 覆盖 sticky），右侧留出同步按钮空间 */
+/* ===== 课程表模块（v1.9.3：照抄「我的科大 MyUSTC」的周课表排版） =====
+   数值量自 MyUSTC 5.1.2 真机截图（1440×3200 物理像素、密度 640 → ÷4 得 CSS px）：
+   列宽 1440/7≈51.4、每小节高 ≈31、课间空隙 ≈5、卡片圆角 ≈6、同色系 1.5px 描边、
+   卡片内是深灰字（#212121 课名/时间、#6b6b6b 教师与节次）、地点做成浅色小标签。
+   列顺序：周日 周一 … 周六（与教务处教学日历、MyUSTC 一致，周日在最左）。 */
 .ct-header { padding-right: 100px; }
 .ct-sync {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   border: none; background: var(--primary); color: #fff;
   border-radius: 18px; padding: 8px 15px; font-size: 13px; font-weight: 600;
 }
-.ct-content { padding: 10px 10px 16px; }
-.ct-weekbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ct-content { padding: 8px 0 14px; }
+.ct-weekbar { display: flex; align-items: center; gap: 6px; padding: 0 10px 8px; }
+.ct-weekinfo { flex: 1; min-width: 0; }
+.ct-weeklabel { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.35; }
+.ct-range { font-size: 11px; color: var(--text-sub); line-height: 1.35; }
 .ct-nav, .ct-now {
   border: 1px solid var(--border); background: var(--card); border-radius: 8px;
-  padding: 6px 12px; font-size: 13px; color: var(--text);
+  min-width: 36px; padding: 5px 10px; font-size: 12px; color: var(--text);
 }
 .ct-now { font-weight: 600; }
-.ct-weeklabel { flex: 1; text-align: center; font-weight: 700; font-size: 15px; color: var(--text); }
-.ct-grid { display: flex; background: var(--ct-grid-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-.ct-timecol { width: 44px; flex: none; border-right: 1px solid var(--line-2); background: var(--ct-timecol-bg); }
-.ct-corner { height: 34px; line-height: 34px; text-align: center; font-size: 11px; color: var(--text-sub); }
-.ct-slot {
-  height: 46px; padding-top: 5px; text-align: center; box-sizing: border-box;
-  font-size: 12px; font-weight: 600; color: var(--ct-slot-text);
-}
-.ct-slot small { display: block; font-size: 9px; color: var(--ct-slot-sub); font-weight: 400; }
-.ct-days { flex: 1; display: flex; min-width: 0; }
+.ct-grid { background: var(--card); border-top: 1px solid var(--line-2); }
+.ct-days { display: flex; }
 .ct-day { flex: 1; min-width: 0; border-right: 1px solid var(--line-2); }
 .ct-day:last-child { border-right: none; }
 .ct-dayhead {
-  height: 34px; padding-top: 5px; text-align: center; box-sizing: border-box;
-  font-size: 12px; font-weight: 600; color: var(--text);
+  height: 36px; padding-top: 4px; text-align: center; box-sizing: border-box;
+  border-bottom: 1px solid var(--line-2);
 }
-.ct-dayhead small { display: block; font-size: 9px; color: var(--text-sub); font-weight: 400; }
+.ct-dayhead b { display: block; font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.ct-dayhead small { display: block; font-size: 10px; color: var(--text-sub); font-weight: 400; line-height: 1.25; }
 /* v1.8.15：调课 / 放假日标记（课程表与日程、提醒保持一致） */
 .ct-dayhead small .ct-mark { color: var(--warn); font-weight: 600; }
 .ct-dayhead small .ct-off { color: var(--danger); font-weight: 600; }
-.ct-day.ct-holiday { background: var(--bg-press); }
-.ct-day.ct-holiday .ct-dayhead { color: var(--text-sub); }
-.ct-today { background: var(--ct-today-bg); }
-.ct-today .ct-dayhead { color: var(--primary); }
-.ct-daybody { position: relative; height: 598px; }
-.ct-block {
-  position: absolute; left: 2px; right: 2px; border-radius: 7px; color: #fff;
-  padding: 4px; overflow: hidden; box-sizing: border-box;
-  box-shadow: 0 1px 3px rgba(16, 32, 64, 0.18); cursor: pointer;
+.ct-day.ct-holiday .ct-daybody { background: var(--bg-press); }
+.ct-today .ct-dayhead b { color: var(--primary); }
+.ct-daybody { position: relative; height: 403px; background: var(--card); }
+/* 每小节一道极淡的横线，空课格子也有刻度感（MyUSTC 同款） */
+.ct-daybody::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, var(--line-2) 0 1px, transparent 1px 31px);
+  opacity: .45;
 }
-.ct-bname { display: block; font-size: 10px; line-height: 1.25; font-weight: 600; max-height: 38px; overflow: hidden; }
-.ct-broom { display: block; font-size: 9px; opacity: 0.92; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-block {
+  position: absolute; left: 1px; right: 1px; box-sizing: border-box;
+  border: 1.5px solid var(--ct-bd, #ccc); border-radius: 6px;
+  background: var(--ct-bg, #eee); color: #212121; overflow: hidden;
+  padding: 2px 3px 1px; cursor: pointer;
+}
+.ct-btime { display: block; font-size: 9px; line-height: 1.2; color: #212121; }
+.ct-bname { display: block; font-size: 9px; line-height: 1.15; font-weight: 700; color: #212121; word-break: break-all; }
+.ct-bmeta { display: block; font-size: 8px; line-height: 1.25; color: #6b6b6b; word-break: break-all; }
+.ct-broom {
+  display: inline-block; margin: 1px 0; padding: 0 3px; border-radius: 4px; max-width: 100%;
+  background: rgba(255, 255, 255, .62); font-size: 8px; line-height: 1.4; color: #212121;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+}
+.ct-bend { display: block; font-size: 8px; line-height: 1.25; color: #6b6b6b; }
+.ct-badj {
+  display: inline-block; margin-left: 2px; padding: 0 2px; border-radius: 3px;
+  background: rgba(33, 33, 33, .14); font-size: 8px; line-height: 1.35; color: #212121;
+}
+.ct-empty { padding: 26px 16px; text-align: center; color: var(--text-sub); font-size: 13px; }
