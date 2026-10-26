@@ -60,7 +60,9 @@
 - **「全」视图**：周次条最右边的「全」→ 整学期课程清单（按星期分组，显示起止时间/节次/教师/地点/周次区间），再点回到周网格
 - **自定义时间的活动不会漏**：教务把研讨课这类活动返回成「节次 0 + 起止时刻」（实测「“科学与社会”研讨课」= 周一 11:30–13:30、仅第 5 周）。
   解析器与 MyUSTC 同款降级链：先用 `startDate/endDate` 的时刻反推节次落位，卡片上显示**真实时刻**而不是编造的课表时间
-- 每天定时后台静默同步一次并滚动续排未来 3 天的提醒
+- **提醒不再依赖每日重算**：网页层会把未来 **14 天**的精确排程计划（含调课日并集、自定义时间活动的真实时刻）推给原生，
+  原生只按绝对时间排闹钟。每天 06:30 仍会后台静默同步课表；即使几天不打开 App，已排的提醒也不会断
+  （若课表在 App 未打开时发生变化，提醒会在下次打开 App 后按新计划更新）
 
 ### 💬 AI 助手
 - 一句话增删改查日程：「明天下午 3 点提醒我交作业」「把高数作业标记完成」
@@ -165,7 +167,7 @@ cp android/keystore.properties.example android/keystore.properties
 签名密钥**不在仓库**，CI 通过 4 个仓库 Secrets 取回（`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`，2026-09-24 已配置）→ 推送 `v*` 标签时 CI 构建**正式签名**的 APK 并自动附加到 Release。未配置这些 Secrets 时，产物退化为 debug 签名、只上传为 Artifact（Release 仍会创建，只是不附 APK）。
 
 ### 逻辑自检（无需手机）
-仓库自带一个不依赖浏览器与手机的测试台：它在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图渲染与周次区间压缩、自定义时间活动、对账不误关、后台同步结果采纳、展开幂等、完成状态保持、删除后不复活、空课表健壮性等 51 项）。
+仓库自带一个不依赖浏览器与手机的测试台：它在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图渲染与周次区间压缩、自定义时间活动、对账不误关、后台同步结果采纳、14 天原生排程计划、已完成/已移除节次不排提醒、展开幂等、完成状态保持、删除后不复活、空课表健壮性等 62 项）。
 
 ```bash
 node tools/course-logic-test.js
@@ -221,7 +223,7 @@ Android 12+ 需要「闹钟与提醒」权限，国产 ROM 还需要自启动 + 
 先确认能在弹出的窗口里正常登录并进入课表页；登录过期时重新同步一次即可。抓取走的是教务官方接口，失败时会回退为页面解析。
 
 **为什么日程里的课表只显示未来几天？**
-课程日程按「当天 + 3 天」滚动展开（与提醒窗口一致），避免历史数据堆积；提醒本身由原生侧负责，不依赖应用是否打开。若窗口内恰好全是假期，日程页顶部会显示「未来三天无课（假期/无排课）」，不是没生成。
+课程日程按「当天 + 3 天」滚动展开，避免历史数据堆积；提醒由网页层生成的 **14 天精确计划**经原生闹钟执行，不依赖应用是否打开。若日程窗口内恰好全是假期，日程页顶部会显示「未来三天无课（假期/无排课）」，不是没生成。
 
 **课程日程突然不再生成？**（v1.8.20 已修）
 三个历史原因：① 每日 06:30 后台同步只更新课表与提醒，课程日程条目要等网页层展开；② 网页层每次启动先 push 后 pull，会把原生较新的同步时间戳覆盖掉，导致后台结果被判为「不新」而丢弃；③ 对账时把「暂时不在窗口内」的节次写进永久关闭名单，之后即使课表恢复也不再生成。
@@ -276,7 +278,7 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 - **Correct per week**: expanded from the week data returned by the registrar (odd/even weeks included)
 - **Follows the official academic calendar**: make-up and holiday days are labelled next to the date (e.g. `9/20 · 补周五课`, `9/25 · 休`), keeping the grid, schedule and reminders consistent
 - **One independent event per session**: complete or delete them individually; after a timetable change a re-sync **reconciles** (updates moved sessions, removes cancelled ones, adds new ones)
-- A daily background sync keeps the next 3 days of reminders rolling
+- The web layer pushes a **14-day plan with absolute timestamps** (make-up days and custom-time activities included); native alarms only schedule those times, so reminders keep working even if the app is not opened for days. A daily 06:30 background sync still refreshes the timetable; plan changes take effect the next time the app opens
 
 ### 💬 AI assistant
 - Manage the schedule in natural language; the model calls tools (list / add / update / complete / reopen / delete / clear completed / toggle today bar / stats)
@@ -330,7 +332,7 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`. The repo ships 
 A GitHub Actions workflow ([`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)) builds the APK on every push to `main` and attaches it to a Release when a `v*` tag is pushed (if no signing secrets are configured, the artifact is named `-debug-signed` and is **not** attached to the Release).
 
 ### Logic self-test (no device needed)
-The repo ships a test harness that stubs the DOM/plugins in Node and loads the **real** `www/js/course.js`, asserting 31 cases around the timetable and academic-calendar logic (current week and make-up-class detection, holiday suspension, odd/even weeks, lesson times, idempotent expansion, completion persistence, no resurrection after deletion, empty-timetable robustness):
+The repo ships a test harness that stubs the DOM/plugins in Node and loads the **real** `www/js/course.js`, asserting 62 cases around the timetable and academic-calendar logic (current week and make-up-class detection, holiday suspension, odd/even weeks, lesson times, custom-time activities, the 14-day native plan, skipping completed/removed sessions, idempotent expansion, completion persistence, no resurrection after deletion, empty-timetable robustness):
 
 ```bash
 node tools/course-logic-test.js

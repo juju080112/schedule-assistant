@@ -24,7 +24,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *
  * 方法：
  *   openLogin({url})              打开教务登录窗口，resolve 带回抓取报告（raw）与抓取页地址（url）
- *   syncAlarms({state})           网页层推送课表状态，原生重排「当天+3天」课程提醒
+ *   syncAlarms({state})           网页层推送课表状态与未来 14 天精确排程计划，原生据此重排提醒
  *   setAuto({enabled}) / getAuto  每日自动同步开关
  *   clearLogin()                  清除本机保存的登录会话（Cookie 与站点存储）
  */
@@ -145,7 +145,7 @@ public class CoursePlugin extends Plugin {
         }
     }
 
-    /** 网页层推送完整课表状态，原生据此重排课程提醒（准点 + 提前1小时，窗口=当天+3天） */
+    /** 网页层推送完整课表状态与排程计划，原生据此重排课程提醒（准点 + 提前1小时） */
     @PluginMethod
     public void syncAlarms(PluginCall call) {
         String state = call.getString("state", "{}");
@@ -259,6 +259,13 @@ public class CoursePlugin extends Plugin {
             ret.put("error", String.valueOf(e.getMessage()));
         }
         call.resolve(ret);
+    }
+
+    /** v1.9.7：清空原生课表状态与全部课程闹钟（「清空所有数据」时调用） */
+    @PluginMethod
+    public void clearState(PluginCall call) {
+        CourseAutoSync.clearState(getContext());
+        call.resolve();
     }
 
     /** 清除本机登录会话（「清除本地课表数据」时调用） */

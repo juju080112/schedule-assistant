@@ -30,9 +30,9 @@ import java.util.Locale;
  * 课程提醒本地引擎（v1.7.0）
  *
  * 数据流：网页层（course.js）在同步成功 / 设置变更 / 每次启动时，
- * 通过 CoursePlugin.syncAlarms(state) 把「课表 + 校历 + 作息表 + 设置」
- * 推给本类保存；本类按「当天 + 往后 3 天」窗口换算出每一节课的开始时间，
- * 用系统闹钟各排两条提醒（准点 + 提前 1 小时，与其他日程一致）。
+ * 通过 CoursePlugin.syncAlarms(state) 把「未来 14 天的精确排程计划 + 课表 + 设置」
+ * 推给本类保存；本类只按计划里的绝对时间排闹钟（准点 + 提前 1 小时，与其他日程一致），
+ * 不再自行推算校历/调课/作息（v1.9.7）。
  *
  * 每日自动同步：由 TimetableSyncService（每日 06:30 闹钟拉起）在后台
  * 无头 WebView 里复用已登录会话重新抓取课表，成功后回调 rescheduleAlarms。
@@ -57,7 +57,7 @@ public final class CourseAutoSync {
 
     static final int SYNC_REQUEST_CODE = 42301;
     static final int SYNC_HOUR = 6, SYNC_MINUTE = 30;   // 每日自动同步时间 06:30
-    static final int WINDOW_DAYS = 4;                    // 当天 + 往后 3 天
+    static final int PLAN_MAX_DAYS = 21;                 // 计划正常 14 天；上限仅防脏数据
     static final long PRE_LEAD_MS = 3600000L;            // 与其他日程一致：提前 1 小时
     static final long FAIL_NOTI_GAP = 20 * 3600000L;     // 失败提醒最少间隔
 
@@ -109,6 +109,16 @@ public final class CourseAutoSync {
         return cs != null && cs.length() > 0 && !st.optString("lastGoodUrl", "").isEmpty();
     }
 
+    /** v1.9.7：「清空所有数据」时连原生状态、课程闹钟、每日同步闹钟一起清掉。
+        否则网页层清空后，下次启动会把原生里的旧课表重新采纳回来。 */
+    static void clearState(Context ctx) {
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am != null) cancelAll(ctx, am);
+        cancelSyncAlarm(ctx);
+        try { new File(ctx.getFilesDir(), STATE_FILE).delete(); } catch (Exception ignored) {}
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+    }
+
     /** 网页层推送新状态：落盘 → 重排提醒 → 保证每日同步闹钟在位 */
     static void applyState(Context ctx, String stateJson) {
         if (stateJson == null || stateJson.isEmpty()) return;
@@ -136,30 +146,10 @@ public final class CourseAutoSync {
         if (isAuto(ctx)) scheduleNextSync(ctx);
     }
 
-    /* ============ 校历换算（与 course.js 的规则保持一致） ============ */
-    private static Calendar parseDate(String key) {
-        try {
-            String[] p = key.split("-");
-            Calendar c = Calendar.getInstance();
-            c.clear();
-            c.set(Integer.parseInt(p[0]), Integer.parseInt(p[1]) - 1, Integer.parseInt(p[2]), 0, 0, 0);
-            return c;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String dateKey(Calendar c) {
-        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.getTime());
-    }
-
-    /** 周一=1 … 周日=7 */
-    private static int isoWeekday(Calendar c) {
-        int dow = c.get(Calendar.DAY_OF_WEEK); // 1=周日 … 7=周六
-        return (dow + 5) % 7 + 1;
-    }
-
     /* ============ 重排课程提醒 ============ */
+    /* v1.9.7：排程的唯一事实来源是网页层推送的 plan（未来 14 天的绝对时间戳）。
+       调课日并集、自定义时间活动的真实时刻都在网页层算好；
+       原生不再重复实现校历/周次/作息，避免两套算法漂移。 */
     static void rescheduleAlarms(Context ctx) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
@@ -168,96 +158,35 @@ public final class CourseAutoSync {
         JSONObject st = loadState(ctx);
         JSONObject settings = st.optJSONObject("settings");
         boolean enabled = settings == null || settings.optBoolean("enabled", true);
-        JSONArray courses = st.optJSONArray("courses");
-        if (!enabled || courses == null || courses.length() == 0) {
-            saveAlarmKeys(ctx, new ArrayList<String>());
-            return;
-        }
-
-        JSONObject termObj = st.optJSONObject("term");
-        JSONObject term = termObj == null ? new JSONObject() : termObj;
-        String anchor = term.optString("week1Sunday", "");
-        int totalWeeks = term.optInt("totalWeeks", 20);
-        JSONObject overrides = term.optJSONObject("overrides");
-        if (overrides == null) overrides = new JSONObject();
-        List<String> holidays = new ArrayList<String>();
-        JSONArray hol = term.optJSONArray("holidays");
-        if (hol != null) for (int i = 0; i < hol.length(); i++) holidays.add(hol.optString(i));
-        JSONArray slotStart = st.optJSONArray("slotStart");
-
-        Calendar anchorCal = parseDate(anchor);
-        if (anchorCal == null || slotStart == null || slotStart.length() == 0) {
+        JSONArray plan = st.optJSONArray("plan");
+        if (!enabled || plan == null || plan.length() == 0) {
             saveAlarmKeys(ctx, new ArrayList<String>());
             return;
         }
 
         long now = System.currentTimeMillis();
+        long horizon = now + PLAN_MAX_DAYS * 86400000L;
         List<String> keys = new ArrayList<String>();
-        /* v1.7.5：网页层推送的 skip 列表（已完成/已移除的节次），排程时跳过 */
-        java.util.Set<String> skipSet = new java.util.HashSet<String>();
-        JSONArray skArr = st.optJSONArray("skip");
-        if (skArr != null) {
-            for (int i = 0; i < skArr.length(); i++) {
-                String sk = skArr.optString(i, "");
-                if (!sk.isEmpty()) skipSet.add(sk);
-            }
-        }
-        Calendar day = Calendar.getInstance();
-        day.set(Calendar.HOUR_OF_DAY, 0);
-        day.set(Calendar.MINUTE, 0);
-        day.set(Calendar.SECOND, 0);
-        day.set(Calendar.MILLISECOND, 0);
+        java.util.Set<String> seen = new java.util.HashSet<String>();
 
-        for (int d = 0; d < WINDOW_DAYS; d++) {
-            if (d > 0) day.add(Calendar.DAY_OF_YEAR, 1);
-            String dk = dateKey(day);
-            if (holidays.contains(dk)) continue;
+        for (int i = 0; i < plan.length(); i++) {
+            JSONObject p = plan.optJSONObject(i);
+            if (p == null) continue;
+            long at = p.optLong("due", 0L);
+            if (at <= now || at > horizon) continue;
+            String key = p.optString("key", "");
+            if (key.isEmpty() || seen.contains(key)) continue;
+            seen.add(key);
 
-            long weekNo = (day.getTimeInMillis() - anchorCal.getTimeInMillis()) / 86400000L / 7 + 1;
-            if (weekNo < 1 || weekNo > totalWeeks) continue;
+            String name = p.optString("name", "课程");
+            String loc = p.optString("location", "");
+            String body = name + (loc.isEmpty() ? "" : " · " + loc);
+            String hm = new SimpleDateFormat("HH:mm", Locale.US).format(new Date(at));
 
-            int effWd = overrides.has(dk) ? overrides.optInt(dk, 0) : isoWeekday(day);
-            if (effWd < 1 || effWd > 7) continue;
-
-            for (int i = 0; i < courses.length(); i++) {
-                JSONObject c = courses.optJSONObject(i);
-                if (c == null) continue;
-                if (c.optInt("weekday", 0) != effWd) continue;
-
-                int ss = c.optInt("startSlot", 0);
-                if (ss < 1 || ss > slotStart.length()) continue;
-                JSONArray t = slotStart.optJSONArray(ss - 1);
-                if (t == null || t.length() < 2) continue;
-
-                JSONArray weeks = c.optJSONArray("weeks");
-                if (weeks != null && weeks.length() > 0) {
-                    boolean hit = false;
-                    for (int w = 0; w < weeks.length(); w++) {
-                        if (weeks.optLong(w) == weekNo) { hit = true; break; }
-                    }
-                    if (!hit) continue;
-                }
-
-                Calendar startCal = (Calendar) day.clone();
-                startCal.set(Calendar.HOUR_OF_DAY, t.optInt(0, 8));
-                startCal.set(Calendar.MINUTE, t.optInt(1, 0));
-                startCal.set(Calendar.SECOND, 0);
-                startCal.set(Calendar.MILLISECOND, 0);
-                long startTs = startCal.getTimeInMillis();
-                if (startTs <= now) continue;
-
-                String name = c.optString("name", "课程");
-                String loc = c.optString("location", "");
-                String body = name + (loc.isEmpty() ? "" : " · " + loc);
-                String hm = new SimpleDateFormat("HH:mm", Locale.US).format(new Date(startTs));
-                String key = name + "|" + dk + "|" + ss;
-                if (skipSet.contains(key)) continue; // 用户已标记完成/移除，不再提醒
-
-                scheduleOne(ctx, am, key, startTs, "日程提醒", hm + " " + body, false);
-                long pre = startTs - PRE_LEAD_MS;
-                if (pre > now) scheduleOne(ctx, am, key, pre, "日程预提醒", "1 小时后开始：" + body, true);
-                keys.add(key);
-            }
+            scheduleOne(ctx, am, key, at, "日程提醒", hm + " " + body, false);
+            long pre = at - PRE_LEAD_MS;
+            if (pre > now) scheduleOne(ctx, am, key, pre, "日程预提醒", "1 小时后开始：" + body, true);
+            keys.add(key);
         }
         saveAlarmKeys(ctx, keys);
     }

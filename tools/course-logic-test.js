@@ -72,11 +72,16 @@ global.fmtHM = (ts) => {
 
 /* ---- 桩化的原生插件（模拟 CoursePlugin.getState / syncAlarms / ackRoll） ---- */
 let nativeState = { state: '', syncedAt: 0, backendSyncAt: 0, pendingRoll: false };
+let lastAlarmState = null;
 const ackCalls = [];
 global.window.__cap = {
   CourseSync: {
     getState: () => Promise.resolve(nativeState),
-    syncAlarms: () => Promise.resolve({}),
+    syncAlarms: (opts) => {
+      try { lastAlarmState = JSON.parse(opts.state); } catch (e) { lastAlarmState = null; }
+      return Promise.resolve({});
+    },
+    clearState: () => Promise.resolve({}),
     ackRoll: () => { ackCalls.push(1); return Promise.resolve({}); }
   }
 };
@@ -304,6 +309,71 @@ check('课表恢复后可再次生成（不被永久关闭）', existsPsy());
   check('能切回周网格', CS.showAll(false) === false && CS.isShowingAll() === false);
   global.document.getElementById = orig;
   if (before === null) localStorage.removeItem('courseList'); else localStorage.setItem('courseList', before);
+})();
+
+/* ===== 9c. v1.9.7：推给原生的 14 天排程计划 ===== */
+(() => {
+  const beforeList = localStorage.getItem('courseList');
+  const beforeTodos = localStorage.getItem('todos');
+  const beforeClosed = localStorage.getItem('courseClosedMap');
+  localStorage.setItem('courseList', JSON.stringify(timetable));
+  localStorage.removeItem('todos');
+  localStorage.removeItem('courseClosedMap');
+  CS.rollSessions();
+  CS.scheduleCourseNotifications();
+  const plan = (lastAlarmState && lastAlarmState.plan) || [];
+  check('推给原生的计划非空', plan.length > 0, `条目 ${plan.length}`);
+  const todayPlan = plan.filter((p) => {
+    const d = new Date(p.due);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` === todayKey;
+  });
+  check('今天的课进入原生计划', todayPlan.some((p) => p.name === '大学生心理学'),
+    todayPlan.map((p) => p.name).join(',') || '（空）');
+  const psyP = todayPlan.find((p) => p.name === '大学生心理学');
+  check('原生计划用绝对时间 15:55', psyP && fmtHM(psyP.due) === '15:55', psyP ? fmtHM(psyP.due) : '缺失');
+  check('原生计划含结束时间 18:20', psyP && fmtHM(psyP.endTs) === '18:20', psyP ? fmtHM(psyP.endTs) : '缺失');
+  const dates = Array.from(new Set(plan.map((p) => {
+    const d = new Date(p.due);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }))).sort();
+  check('计划覆盖超过 4 天（14 天窗口）', dates.length > 0 && dates[dates.length - 1] > plusDays(3), dates.join(','));
+  check('放假日不进入原生计划', !dates.includes('2026-09-25'), dates.join(','));
+
+  /* 已完成 / 已移除的节次不能排提醒 */
+  if (psyP) CS.closeSessionKeys([psyP.key]);
+  CS.scheduleCourseNotifications();
+  const plan2 = (lastAlarmState && lastAlarmState.plan) || [];
+  check('已关闭的节次不进入原生计划', psyP && !plan2.some((p) => p.key === psyP.key), `计划 ${plan2.length} 条`);
+
+  if (beforeList === null) localStorage.removeItem('courseList'); else localStorage.setItem('courseList', beforeList);
+  if (beforeTodos === null) localStorage.removeItem('todos'); else localStorage.setItem('todos', beforeTodos);
+  if (beforeClosed === null) localStorage.removeItem('courseClosedMap'); else localStorage.setItem('courseClosedMap', beforeClosed);
+  CS.scheduleCourseNotifications();
+})();
+
+/* ===== 9d. v1.9.7：自定义时间活动按真实时刻排程与展开 ===== */
+(() => {
+  const beforeList = localStorage.getItem('courseList');
+  const beforeTodos = localStorage.getItem('todos');
+  const beforeClosed = localStorage.getItem('courseClosedMap');
+  const list = JSON.parse(beforeList || '[]');
+  list.push({ name: '研讨课', teacher: '钱老师', location: '咖啡馆', weekday: 1, startSlot: 5, endSlot: 6, weeks: [4], customTime: '11:30-13:30', raw: '' });
+  localStorage.setItem('courseList', JSON.stringify(list));
+  localStorage.removeItem('courseClosedMap');
+  CS.rollSessions();
+  CS.scheduleCourseNotifications();
+  const plan = (lastAlarmState && lastAlarmState.plan) || [];
+  const p = plan.find((x) => x.name === '研讨课');
+  check('自定义时间活动进入原生计划', !!p, plan.map((x) => x.name).join(',') || '（空）');
+  check('提醒用真实开始时刻 11:30', p && fmtHM(p.due) === '11:30', p ? fmtHM(p.due) : '缺失');
+  check('结束用真实时刻 13:30（不是 14:45）', p && fmtHM(p.endTs) === '13:30', p ? fmtHM(p.endTs) : '缺失');
+  const sess = CS.getCourseSessions(4).sessions.find((s) => s.title.includes('研讨课'));
+  check('日程条目也显示真实时段 11:30-13:30', sess && sess.time === '11:30-13:30', sess ? sess.time : '缺失');
+
+  if (beforeList === null) localStorage.removeItem('courseList'); else localStorage.setItem('courseList', beforeList);
+  if (beforeTodos === null) localStorage.removeItem('todos'); else localStorage.setItem('todos', beforeTodos);
+  if (beforeClosed === null) localStorage.removeItem('courseClosedMap'); else localStorage.setItem('courseClosedMap', beforeClosed);
+  CS.scheduleCourseNotifications();
 })();
 
 /* ===== 10. v1.8.20：采纳原生后台同步（每日 06:30）的结果 ===== */

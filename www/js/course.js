@@ -47,8 +47,11 @@
   /* 课程提醒的 ID 区间（2e9 以上为课程专用）由原生 CourseAutoSync 分配，
    * 待办用 id(0~1e9) 与 id+1e9(1e9~2e9)，常驻栏用 999998/999999，互不冲突。 */
 
-  /* 课程提醒窗口：当天 + 往后 3 天（每日自动同步会滚动续排） */
+  /* 课程日程（todos）窗口：当天 + 往后 3 天；提醒计划另见 NATIVE_PLAN_DAYS */
   var NOTIFY_HORIZON_DAYS = 4;
+  /* v1.9.7：推给原生的排程计划天数。原生不再自己算校历，只按这里给出的绝对时间排闹钟；
+     覆盖 14 天，即使几天不打开 App，已排的提醒仍然有效。 */
+  var NATIVE_PLAN_DAYS = 14;
 
   /* ============ 存储键 ============ */
   var K_LIST = 'courseList';
@@ -204,6 +207,30 @@
     if (start == null) return null;
     return start + SLOT_MINUTES * 60000;
   }
+  /* v1.9.7：自定义时间活动（研讨课等）的真实起止分钟。
+     教务给的是 startUnit=0 + 起止时刻，解析器已反推出节次用于落位；
+     但日程与提醒必须用真实时刻，不能再借作息表推算（否则 11:30-13:30 会变成 11:25-14:45）。 */
+  function customMinutes(c) {
+    var m = /(\d{1,2}):(\d{2})\s*[-~—]\s*(\d{1,2}):(\d{2})/.exec(String(c && c.customTime || ''));
+    if (!m) return null;
+    var sh = parseInt(m[1], 10), sm = parseInt(m[2], 10);
+    var eh = parseInt(m[3], 10), em = parseInt(m[4], 10);
+    if (sh > 23 || sm > 59 || eh > 24 || em > 59) return null;
+    var start = sh * 60 + sm, end = eh * 60 + em;
+    if (end <= start) end = start + SLOT_MINUTES;
+    return { start: start, end: end };
+  }
+  function sessionStartTs(dateObj, c) {
+    var cm = customMinutes(c);
+    if (cm) return startOfDay(dateObj) + cm.start * 60000;
+    return slotStartTs(dateObj, c.startSlot);
+  }
+  function sessionEndTs(dateObj, c) {
+    var cm = customMinutes(c);
+    if (cm) return startOfDay(dateObj) + cm.end * 60000;
+    var es = (c.endSlot && c.endSlot >= c.startSlot) ? c.endSlot : c.startSlot;
+    return slotEndTs(dateObj, es);
+  }
 
   /* 判断某课程在某日期是否上课，返回 occurrence 或 null */
   /* ============ 课程节次状态（v1.8.12：每节课实体化为独立日程） ============
@@ -293,6 +320,8 @@
   function syncFromNative() {
     return pullNativeState().then(function (adopted) {
       try { dropStaleSessions(); syncSessions(); } catch (e) {}
+      /* v1.9.7：即使 4 天日程窗口没变化，也要按新课表重推 14 天提醒计划 */
+      try { if (getSettings().enabled && getList().length) scheduleCourseNotifications(); } catch (e) {}
       try { if (typeof renderSchedule === 'function') renderSchedule(); } catch (e) {}
       try { renderCourseTable(true); } catch (e) {}
       refreshTodayBarSafe();
@@ -306,13 +335,17 @@
    * 2) 课表里已不存在的节次 → 未完成且在窗口内的自动删除，并永久关闭（不再重新生成）
    * 3) 窗口内新增的节次 → 自动补建为独立日程
    * 已完成的节次视为历史，不会被自动删除。 */
-  function expectedSessions() {
+  /* v1.9.7：课程排程的唯一事实来源。
+     课表网格、日程展开、AI 读取、原生闹钟全部使用这里生成的绝对时间戳，
+     原生不再重复实现校历/调课/作息逻辑。 */
+  function buildPlan(days) {
     var list = getList();
     var term = getTerm();
-    var map = {};
-    if (!list.length) return map;
+    var out = [];
+    if (!list.length) return out;
+    var n = Math.max(1, parseInt(days, 10) || NOTIFY_HORIZON_DAYS);
     var base = startOfDay(new Date());
-    for (var i = 0; i < NOTIFY_HORIZON_DAYS; i++) {
+    for (var i = 0; i < n; i++) {
       var d = new Date(base + i * 86400000);
       if (isHoliday(d, term)) continue;
       var wn = weekNoOf(d, term);
@@ -323,21 +356,31 @@
         var c = todays[j];
         var key = c.name + '|' + dateKey(d) + '|' + c.startSlot;
         var endSlot = (c.endSlot && c.endSlot >= c.startSlot) ? c.endSlot : c.startSlot;
-        var st = slotStartTs(d, c.startSlot);
-        var en = slotEndTs(d, endSlot);
-        map[key] = {
+        var st = sessionStartTs(d, c);
+        if (st == null) continue;
+        var en = sessionEndTs(d, c);
+        var timeText = c.customTime ? c.customTime :
+          ('第' + c.startSlot + (endSlot !== c.startSlot ? '-' + endSlot : '') + '节 ' +
+            fmtHM(st) + '-' + fmtHM(en));
+        out.push({
           key: key,
           title: '📚 ' + c.name,
-          detail: '第' + c.startSlot + (endSlot !== c.startSlot ? '-' + endSlot : '') + '节 ' +
-            (st != null ? fmtHM(st) + '-' + fmtHM(en) : '') +
+          name: c.name,
+          location: c.location || '',
+          detail: timeText +
             (c.location ? ' · ' + c.location : '') +
             (c.teacher ? ' · ' + c.teacher : '') + ' · 第' + wn + '周',
           due: st,
           endTs: en,
           weekNo: wn
-        };
+        });
       }
     }
+    return out;
+  }
+  function expectedSessions() {
+    var map = {};
+    buildPlan(NOTIFY_HORIZON_DAYS).forEach(function (e) { map[e.key] = e; });
     return map;
   }
 
@@ -475,6 +518,11 @@
     var p = coursePlugin();
     if (!p || !p.syncAlarms) return;
     var s = getSettings();
+    var skip = {};
+    skipKeys().forEach(function (k) { skip[k] = 1; });
+    /* v1.9.7：把未来 14 天的精确排程计划交给原生（已排除完成/移除的节次）。
+       原生只按 due 排闹钟，不再自己算周次、调课与作息。 */
+    var plan = buildPlan(NATIVE_PLAN_DAYS).filter(function (e) { return !skip[e.key]; });
     var state = {
       syncedAt: getSyncAt(),
       lastGoodUrl: store.get(K_URL, ''),
@@ -482,7 +530,7 @@
       term: getTerm(),
       slotStart: SLOT_START,
       courses: getList(),
-      skip: skipKeys() /* 已完成/已移除的节次，原生排程时跳过 */
+      plan: plan
     };
     try { p.syncAlarms({ state: JSON.stringify(state) }).catch(function () {}); } catch (e) {}
   }
@@ -1177,7 +1225,7 @@
   function exportDiagnostics() {
     var p = coursePlugin();
     if (!p || !p.dumpDiagnostics) { toast('当前环境不支持导出诊断（需在 App 内运行）'); return; }
-    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.5' };
+    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.7' };
     try { payload.term = getTerm(); } catch (e) {}
     try { payload.courses = getList(); } catch (e) {}
     try { payload.syncedAt = getSyncAt() ? new Date(getSyncAt()).toISOString() : null; } catch (e) {}
@@ -1212,6 +1260,7 @@
     getTimetable: function () { return getList().map(courseBrief); },
     getWeekPlan: getWeekPlan,
     getCourseSessions: getCourseSessions,
+    buildPlan: buildPlan,                    /* v1.9.7：未来 N 天的精确排程计划（测试与排查用） */
     getSyncStatus: getSyncStatus,
     rollSessions: rollSessions,              /* v1.8.12：把课表展开成独立日程（含 v1.8.14 对账） */
     syncSessions: syncSessions,              /* v1.8.14：课表变动后对账（更新/删除/补建） */
@@ -1233,9 +1282,14 @@
     exportDiagnostics: exportDiagnostics,     /* v1.9.5：导出课表诊断（设置→数据管理） */
     /* 清空所有数据时调用（设置页「清空所有数据」） */
     purge: function () {
-      cancelAllCourseNotifications(); /* 空课表 → 原生取消全部课程提醒 */
-      [K_LIST, K_TERM, K_SYNC, K_SET, K_URL, K_RAW, K_DEBUG, K_DONE, K_HIDE, K_CLOSED, K_BSYNC].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       var p = coursePlugin();
+      /* v1.9.7：必须连原生状态一起清，否则下次启动会把旧课表重新采纳回来 */
+      if (p && p.clearState) {
+        try { p.clearState().catch(function () {}); } catch (e) {}
+      } else {
+        cancelAllCourseNotifications(); /* 旧版原生没有 clearState 时的兜底 */
+      }
+      [K_LIST, K_TERM, K_SYNC, K_SET, K_URL, K_RAW, K_DEBUG, K_DONE, K_HIDE, K_CLOSED, K_BSYNC].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       if (p && p.clearLogin) { try { p.clearLogin().catch(function () {}); } catch (e) {} }
     }
   };
