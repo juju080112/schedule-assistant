@@ -247,10 +247,8 @@ function cropApply() {
   el.style.width = cropState.baseW + 'px';
   el.style.height = cropState.baseH + 'px';
   el.style.transform = 'translate(-50%, -50%) translate(' + cropState.tx + 'px, ' + cropState.ty + 'px) scale(' + scale + ') rotate(' + cropState.rotate + 'deg)';
-  const zv = $('cropZoomVal');
-  if (zv) zv.textContent = Math.round(cropState.relScale * 100) + '%';
-  const z = $('cropZoom');
-  if (z) z.value = String(Math.round(cropState.relScale * 100));
+  const hint = document.querySelector('.crop-hint');
+  if (hint) hint.textContent = '单指拖动 · 双指缩放 ' + Math.round(cropState.relScale * 100) + '%';
 }
 
 function cropReset() {
@@ -382,21 +380,68 @@ async function cropDone() {
 
 (function bindCrop() {
   const st = $('cropStage');
-  let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  const pointers = new Map();
+  let mode = 'none';
+  let sx = 0, sy = 0, ox = 0, oy = 0;
+  let pinchDist = 1, pinchRel = 1, pinchTx = 0, pinchTy = 0, pinchMid = null;
+
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y) || 1; }
+
   st.addEventListener('pointerdown', (e) => {
     if (!cropState) return;
-    dragging = true;
-    sx = e.clientX; sy = e.clientY;
-    ox = cropState.tx; oy = cropState.ty;
     try { st.setPointerCapture(e.pointerId); } catch (x) {}
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) {
+      mode = 'drag';
+      sx = e.clientX; sy = e.clientY;
+      ox = cropState.tx; oy = cropState.ty;
+    } else if (pointers.size === 2) {
+      mode = 'pinch';
+      const pts = Array.from(pointers.values());
+      pinchDist = dist(pts[0], pts[1]);
+      pinchRel = cropState.relScale;
+      pinchTx = cropState.tx;
+      pinchTy = cropState.ty;
+      const r = st.getBoundingClientRect();
+      pinchMid = {
+        x: (pts[0].x + pts[1].x) / 2 - r.left - cropState.stageW / 2,
+        y: (pts[0].y + pts[1].y) / 2 - r.top - cropState.stageH / 2
+      };
+    }
   });
+
   st.addEventListener('pointermove', (e) => {
-    if (!dragging || !cropState) return;
-    cropState.tx = ox + (e.clientX - sx);
-    cropState.ty = oy + (e.clientY - sy);
-    cropApply();
+    if (!cropState || !pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (mode === 'drag' && pointers.size === 1) {
+      cropState.tx = ox + (e.clientX - sx);
+      cropState.ty = oy + (e.clientY - sy);
+      cropApply();
+      return;
+    }
+    if (mode === 'pinch' && pointers.size === 2) {
+      const pts = Array.from(pointers.values());
+      const rel = Math.min(4, Math.max(1, pinchRel * (dist(pts[0], pts[1]) / pinchDist)));
+      const ratio = rel / pinchRel;
+      cropState.relScale = rel;
+      cropState.tx = pinchMid.x - (pinchMid.x - pinchTx) * ratio;
+      cropState.ty = pinchMid.y - (pinchMid.y - pinchTy) * ratio;
+      cropApply();
+    }
   });
-  const end = () => { dragging = false; };
+
+  function end(e) {
+    pointers.delete(e.pointerId);
+    if (!cropState || pointers.size === 0) { mode = 'none'; return; }
+    if (pointers.size === 1) {
+      const p = Array.from(pointers.values())[0];
+      mode = 'drag';
+      sx = p.x; sy = p.y;
+      ox = cropState.tx; oy = cropState.ty;
+    } else {
+      mode = 'pinch';
+    }
+  }
   st.addEventListener('pointerup', end);
   st.addEventListener('pointercancel', end);
 })();
@@ -408,11 +453,7 @@ $('cropRotate').onclick = () => {
   cropApply();
 };
 $('cropReset').onclick = () => { cropReset(); };
-$('cropZoom').addEventListener('input', () => {
-  if (!cropState) return;
-  cropState.relScale = Math.max(1, (+$('cropZoom').value) / 100);
-  cropApply();
-});
+
 $('cropCancel').onclick = () => closeCrop();
 $('cropDone').onclick = () => cropDone();
 $('cropMask').addEventListener('click', (e) => { if (e.target === $('cropMask')) closeCrop(); });
