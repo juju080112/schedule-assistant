@@ -40,6 +40,7 @@
 | 文件 | PDF 用 pdf.js、Word(docx) 用 mammoth 在**本机**抽取文本；另支持 txt / md / csv / json |
 
 - 三类输入可混用；输出严格 JSON（`title` / `detail` / `due` / `remind`）
+- 活动截图会先看报名状态：出现「取消报名 / 已报名 / 报名成功」说明你已报名，生成「参加活动」提醒（用活动开始时间），不会误生成报名截止事项
 - 提示词会注入**当前时间**，因此「明天」「周五」「下周三」都能换算成具体日期
 - 保存前可逐条删除；同一条活动重复解析会**自动合并**成一条，详情取两次的并集
 - 保存后可在详情里 **查看原文件**（保留当时粘贴的原文 / 上传的图片 / 文件文本）
@@ -282,6 +283,7 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 | File | PDF via pdf.js and Word (docx) via mammoth are extracted **on-device**; also txt / md / csv / json |
 
 - The three input types can be combined; output is strict JSON (`title` / `detail` / `due` / `remind`)
+- Activity screenshots are checked for registration status first: "cancel registration" / "registered" means you already signed up, so the app creates an attendance reminder at the event start instead of a registration deadline
 - The prompt injects the **current time**, so "tomorrow", "Friday" and "next Wednesday" resolve to real dates
 - Review and delete items before saving; re-parsing the same event **merges** it into one item
 - Every item keeps its **original source** (pasted text / uploaded image / file text), viewable from the detail sheet
