@@ -1361,6 +1361,7 @@ function openSettingsSub(key) {
   document.querySelectorAll('.sub-pane').forEach((p) => { p.hidden = p.dataset.sub !== key; });
   $('subTitle').textContent = SUB_TITLES[key] || '设置';
   $('settingsSub').hidden = false;
+  document.body.classList.add('sub-open');
   if (key === 'appearance') renderBackgroundUI();
   // v1.7.0：打开课表子页时刷新其状态与预览
   if (key === 'course' && window.CourseSync) {
@@ -1371,6 +1372,7 @@ function openSettingsSub(key) {
 }
 function closeSettingsSub() {
   $('settingsSub').hidden = true;
+  document.body.classList.remove('sub-open');
 }
 document.querySelectorAll('.set-link').forEach((b) => {
   b.addEventListener('click', () => openSettingsSub(b.dataset.sub));
