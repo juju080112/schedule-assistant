@@ -47,10 +47,10 @@
     {
       id: 'deepseek', name: 'DeepSeek', protocol: 'openai',
       baseUrl: 'https://api.deepseek.com/v1',
-      textModels: ['deepseek-chat', 'deepseek-reasoner'],
-      visionModels: [],
+      textModels: ['deepseek-flash', 'deepseek-v4-pro'],
+      visionModels: ['deepseek-flash'],
       requiresKey: true,
-      hint: '在 platform.deepseek.com 创建 API Key；DeepSeek 当前以文本模型为主。'
+      hint: '官方现役：deepseek-flash（支持图片理解）/ deepseek-v4-pro（纯文本）；旧 deepseek-chat 已下线或路由到新模型。'
     },
     {
       id: 'moonshot', name: 'Moonshot Kimi', protocol: 'openai',
@@ -405,10 +405,16 @@
           }
         });
       }
-      return { content: text.join(''), toolCalls: calls, raw: data };
+      var au = data && data.usage;
+      var anthUsage = au ? {
+        inputTokens: au.input_tokens || 0,
+        outputTokens: au.output_tokens || 0,
+        totalTokens: (au.input_tokens || 0) + (au.output_tokens || 0)
+      } : null;
+      return { content: text.join(''), toolCalls: calls, usage: anthUsage, raw: data };
     }
     var msg = data && data.choices && data.choices[0] && data.choices[0].message;
-    if (!msg) return { content: '', toolCalls: [], raw: data };
+    if (!msg) return { content: '', toolCalls: [], usage: null, raw: data };
     var content = msg.content;
     if (Array.isArray(content)) {
       content = content.map(function (p) { return p && p.text ? p.text : ''; }).join('');
@@ -417,7 +423,15 @@
     if (!toolCalls.length && msg.function_call) {
       toolCalls = [normalizeOpenAITool({ id: 'call_0', function: msg.function_call }, 0)].filter(Boolean);
     }
-    return { content: content == null ? '' : content, toolCalls: toolCalls, raw: data };
+    var u = data && data.usage;
+    var usage = u ? {
+      inputTokens: u.prompt_tokens || 0,
+      outputTokens: u.completion_tokens || 0,
+      totalTokens: u.total_tokens || ((u.prompt_tokens || 0) + (u.completion_tokens || 0)),
+      cacheHitTokens: u.prompt_cache_hit_tokens || (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0,
+      cacheMissTokens: u.prompt_cache_miss_tokens || 0
+    } : null;
+    return { content: content == null ? '' : content, toolCalls: toolCalls, usage: usage, raw: data };
   }
 
   function errorMessage(data, status) {

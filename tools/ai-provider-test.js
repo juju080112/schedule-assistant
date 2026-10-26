@@ -185,6 +185,30 @@ check('解析 OpenAI 响应', () => {
   assert.strictEqual(r.toolCalls[0].function.name, 'x');
 });
 
+check('解析 OpenAI/DeepSeek usage（含缓存命中）', () => {
+  const p = AI.getProvider(AI.defaultConfig(), 'deepseek');
+  const r = AI.parseResponse(p, {
+    choices: [{ message: { content: 'ok' } }],
+    usage: {
+      prompt_tokens: 120, completion_tokens: 30, total_tokens: 150,
+      prompt_cache_hit_tokens: 20, prompt_cache_miss_tokens: 100
+    }
+  });
+  assert.strictEqual(r.usage.inputTokens, 120);
+  assert.strictEqual(r.usage.outputTokens, 30);
+  assert.strictEqual(r.usage.totalTokens, 150);
+  assert.strictEqual(r.usage.cacheHitTokens, 20);
+});
+
+check('解析 Anthropic usage', () => {
+  const p = AI.getProvider(AI.defaultConfig(), 'anthropic');
+  const r = AI.parseResponse(p, {
+    content: [{ type: 'text', text: 'ok' }],
+    usage: { input_tokens: 80, output_tokens: 20 }
+  });
+  assert.strictEqual(r.usage.totalTokens, 100);
+});
+
 check('解析 Anthropic 响应', () => {
   const p = AI.getProvider(AI.defaultConfig(), 'anthropic');
   const r = AI.parseResponse(p, {
@@ -234,7 +258,7 @@ check('未填 Base URL 时报错', () => {
 });
 
 check('未配置视觉模型时报错', () => {
-  const p = AI.getProvider(AI.defaultConfig(), 'deepseek');
+  const p = AI.getProvider(AI.defaultConfig(), 'lmstudio');
   assert.throws(() => AI.buildRequest(p, { vision: true, messages: [{ role: 'user', content: 'hi' }] }), /图片理解模型/);
 });
 

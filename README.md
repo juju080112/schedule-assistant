@@ -98,7 +98,7 @@ v1.9.8 起不再绑定智谱，支持**多提供方 + 自定义**。协议支持
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` / `gpt-4o` / `gpt-4.1-mini` / `o4-mini` | `gpt-4o-mini` / `gpt-4o` |
 | Anthropic Claude | `https://api.anthropic.com/v1`（Anthropic 协议） | `claude-sonnet-4-5` / `claude-haiku-4-5` / `claude-opus-4-1` | 同左 |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` / `gemini-2.5-pro` | 同左 |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` / `deepseek-reasoner` | 无 |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-flash` / `deepseek-v4-pro` | `deepseek-flash`（支持图片） |
 | Moonshot Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` / `kimi-latest` | `moonshot-v1-8k-vision-preview` |
 | 阿里云百炼 Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` / `qwen-max` | `qwen-vl-plus` / `qwen-vl-max` |
 | 火山方舟 Doubao | `https://ark.cn-beijing.volces.com/api/v3` | 模型名或推理接入点 ID | 按账号可用模型填写 |
@@ -179,7 +179,7 @@ cp android/keystore.properties.example android/keystore.properties
 仓库自带不依赖浏览器与手机的测试台：
 
 - `tools/course-logic-test.js`：在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图、自定义时间活动、对账、后台同步结果采纳、14 天原生排程计划、已完成/已移除节次不排提醒、展开幂等等）共 **62 项**。
-- `tools/ai-provider-test.js`：验证模型提供方预设、旧配置迁移、OpenAI / Anthropic 端点与请求头、图片与工具调用转换、响应解析、额外请求头覆盖等 **22 项**。
+- `tools/ai-provider-test.js`：验证模型提供方预设、旧配置迁移、OpenAI / Anthropic 端点与请求头、图片与工具调用转换、响应解析、usage 解析、额外请求头覆盖等 **24 项**。
 
 ```bash
 node tools/course-logic-test.js

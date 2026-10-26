@@ -327,7 +327,7 @@ $('btnParse').onclick = async () => {
   $('parseResult').hidden = true;
 
   try {
-    let raw;
+    let aiResult;
     if (hasImage) {
       // 视觉模型：图片 + 文字
       const content = [];
@@ -340,24 +340,29 @@ $('btnParse').onclick = async () => {
         '以上是图片内容，请识别图片中的文字信息（如会议白板、聊天截图、通知单等），结合用户输入提取待办和日程。特别注意：如果截图里出现「取消报名」「已报名」「报名成功」，说明用户已经报过名，请提取「参加活动」事项（due=活动开始时间，detail 写活动时间、地点、主办方），不要提取报名截止事项；只有看到「立即报名」「报名」且用户明确要报名时才提取报名事项。'
       );
       content.push({ type: 'text', text: userText });
-      raw = (await callAI([
+      aiResult = await callAI([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content }
-      ], { model: p.visionModel, vision: true })).content;
+      ], { model: p.visionModel, vision: true });
     } else {
       const userText = buildUserContent(
         (text ? text : '') + (fileTexts ? '\n\n' + fileTexts : '')
       );
-      raw = (await callAI([
+      aiResult = await callAI([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userText }
-      ], { model: p.textModel })).content;
+      ], { model: p.textModel });
     }
 
-    const parsed = parseModelJson(raw);
+    const parsed = parseModelJson(aiResult.content || '');
     lastParsed = parsed;
     renderParseResult(parsed);
     status.textContent = '';
+    if (aiResult.usage) {
+      const u = aiResult.usage;
+      const cache = u.cacheHitTokens ? `（缓存命中 ${u.cacheHitTokens}）` : '';
+      status.textContent = `本次消耗：输入 ${u.inputTokens} / 输出 ${u.outputTokens} / 合计 ${u.totalTokens} tokens${cache}`;
+    }
   } catch (err) {
     status.className = 'status error';
     status.textContent = '解析失败：' + err.message;
@@ -1204,9 +1209,11 @@ $('btnTestApi').onclick = async () => {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(AIProviders.errorMessage(data, resp.status));
-    const out = AIProviders.parseResponse(p, data).content || '';
+    const r = AIProviders.parseResponse(p, data);
+    const out = r.content || '';
     status.className = 'status ok';
-    status.textContent = '✔ 连接成功：' + out.slice(0, 80);
+    status.textContent = '✔ 连接成功：' + out.slice(0, 80) +
+      (r.usage ? ` · ${r.usage.totalTokens} tokens` : '');
   } catch (err) {
     status.className = 'status error';
     status.textContent = '✘ 连接失败：' + err.message;
