@@ -7,6 +7,7 @@
   --primary-light: #E8F0FE;
   --primary-dark: #0848C8;
   --bg: #F1F3F5;               /* 鸿蒙浅灰底 */
+  --bg-scrim-rgb: 247, 248, 250;
   --card: #FFFFFF;
   --text: #182431;             /* 鸿蒙主文字色 */
   --text-sub: #8A919F;
@@ -57,6 +58,7 @@
   --primary-light: #1E2B44;
   --primary-dark: #3A74E0;
   --bg: #0F1216;
+  --bg-scrim-rgb: 12, 16, 22;
   --card: #1A1F26;
   --text: #E9EBEF;
   --text-sub: #98A1AE;
@@ -635,3 +637,104 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   -webkit-user-select: text;
   user-select: text;
 }
+
+
+/* ================= v1.9.13 背景工作室 ================= */
+.bg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bg-opt {
+  border: 1px solid var(--border); background: var(--card); border-radius: 12px;
+  padding: 7px 7px 8px; font-size: 12px; color: var(--text-sub);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: border-color .15s, box-shadow .15s, color .15s;
+}
+.bg-opt.active { border-color: var(--primary); color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.bg-thumb {
+  width: 100%; height: 36px; border-radius: 9px; display: block;
+  border: 1px solid var(--line); background: var(--bg); overflow: hidden;
+}
+.bg-thumb-solid { background: linear-gradient(135deg, #9BB8FF, #5B8CFF); }
+.bg-thumb-gradient { background: linear-gradient(135deg, #FFD3A5, #FD6585); }
+.bg-thumb-aurora { background: linear-gradient(120deg, #5B8CFF, #7DD3FC, #C4B5FD); }
+.bg-thumb-nebula { background: radial-gradient(circle at 30% 30%, #C084FC, transparent 60%), radial-gradient(circle at 70% 70%, #60A5FA, transparent 60%), #1E1B4B; }
+.bg-thumb-image { background: linear-gradient(135deg, #FDE68A, #A7F3D0); background-size: cover; background-position: center; }
+.bg-extra { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.bg-extra[hidden] { display: none; }
+.bg-tune-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.bg-image-row { display: flex; gap: 10px; }
+.bg-color-label, .bg-strength-label { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-sub); }
+.bg-color-label input[type=color] {
+  width: 38px; height: 32px; padding: 2px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); cursor: pointer;
+}
+.bg-strength-label input[type=range] { width: 110px; accent-color: var(--primary); }
+.bg-extra .btn-ghost { width: auto; padding: 8px 12px; margin: 0; }
+#bgStrengthVal { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 自定义背景：一层主题色遮罩 + 图案 */
+body[data-bg]:where(:not([data-bg="default"])) {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(var(--bg-scrim-rgb), var(--bg-scrim-alpha, .4)), rgba(var(--bg-scrim-rgb), var(--bg-scrim-alpha, .4))),
+    var(--bg-pattern, none);
+  background-repeat: no-repeat;
+  background-size: cover, cover;
+  background-position: center, center;
+  background-attachment: fixed;
+  animation: none;
+}
+body[data-bg="solid"] { --bg-pattern: linear-gradient(var(--bg-custom), var(--bg-custom)); }
+body[data-bg="gradient"] { --bg-pattern: linear-gradient(145deg, var(--bg-custom), var(--bg-custom-2)); }
+body[data-bg="aurora"] {
+  --bg-pattern: linear-gradient(120deg, var(--bg-custom), #7DD3FC, #C4B5FD, var(--bg-custom-2));
+  background-size: cover, 300% 300%;
+  animation: bgAurora 24s ease-in-out infinite;
+}
+body[data-bg="nebula"] {
+  --bg-pattern:
+    radial-gradient(circle at 25% 30%, var(--bg-custom), transparent 55%),
+    radial-gradient(circle at 75% 70%, rgba(96,165,250,.9), transparent 55%),
+    linear-gradient(135deg, #1E1B4B, #0F172A);
+  background-size: cover, 120% 120%, 120% 120%, cover;
+  background-position: center, 25% 30%, 75% 70%, center;
+  animation: bgNebula 30s ease-in-out infinite alternate;
+}
+body[data-bg="image"] { --bg-pattern: var(--bg-image, none); }
+body[data-bg]:where(:not([data-bg="default"])) .header {
+  background: var(--bar-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+body.bg-paused[data-bg="aurora"], body.bg-paused[data-bg="nebula"] { animation-play-state: paused; }
+@keyframes bgAurora {
+  0% { background-position: center, 0% 50%; }
+  50% { background-position: center, 100% 50%; }
+  100% { background-position: center, 0% 50%; }
+}
+@keyframes bgNebula {
+  0% { background-position: center, 25% 30%, 75% 70%, center; }
+  100% { background-position: center, 40% 45%, 60% 55%, center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-bg="aurora"], body[data-bg="nebula"] { animation: none !important; }
+}
+
+.bg-extra .btn-ghost[hidden] { display: none; }
+
+body[data-bg]:where(:not([data-bg="default"])) #bgExtra,
+body[data-bg]:where(:not([data-bg="default"])) #bgHint {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+body[data-bg]:where(:not([data-bg="default"])) #bgHint { margin-top: 10px; }
+
+body[data-bg]:where(:not([data-bg="default"])) #scheduleList .date-head,
+body[data-bg]:where(:not([data-bg="default"])) .course-date-head {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+}
+body[data-bg]:where(:not([data-bg="default"])) #doneBlock .date-head { color: var(--text); }

@@ -72,7 +72,7 @@
 - 对话历史仅存本机（保留最近 60 条），右上角可开新对话
 
 ### ⚙️ 设置
-- **外观**：浅色 / 深色 / 跟随系统
+- **外观**：浅色 / 深色 / 跟随系统；背景支持默认 / 纯色 / 渐变 / 动态极光 / 动态星云 / 自定义图片，可调颜色与背景强度；动态背景切到后台自动暂停
 - **AI 配置**：API Key、文本模型、图片理解模型、连通性测试（见下节）
 - **课表同步**：隐私说明、已同步课表预览、开关、清除本地课表数据
 - **通知与提醒**：常驻今日日程栏开关
@@ -304,7 +304,7 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 - Chat history stays on-device (last 60 messages)
 
 ### ⚙️ Settings
-- **Appearance**: light / dark / follow system
+- **Appearance**: light / dark / follow system; backgrounds include default / solid / gradient / animated aurora / animated nebula / custom image, with color and strength controls; animations pause in the background
 - **AI config**, **Timetable**, **Notifications**, **User guide** (permission self-check + per-brand background whitelisting), **Data management**
 
 ## AI configuration

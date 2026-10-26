@@ -87,6 +87,169 @@ const store = {
   set(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 };
 
+/* ============ v1.9.13 背景工作室 ============ */
+const BG_KEY = 'backgroundSettings';
+let bgConfig = { mode: 'default', color: '#5B8CFF', strength: 60, image: '' };
+
+function getBgConfig() {
+  return Object.assign({ mode: 'default', color: '#5B8CFF', strength: 60, image: '' }, store.get(BG_KEY, {}));
+}
+function saveBgConfig() {
+  try { store.set(BG_KEY, bgConfig); return true; }
+  catch (e) { toast('背景设置保存失败，图片可能太大'); return false; }
+}
+function shadeHex(hex, f) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  if (f < 0) { r = Math.round(r * (1 + f)); g = Math.round(g * (1 + f)); b = Math.round(b * (1 + f)); }
+  else { r = Math.round(r + (255 - r) * f); g = Math.round(g + (255 - g) * f); b = Math.round(b + (255 - b) * f); }
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+function applyBackground() {
+  const b = document.body;
+  const mode = ['default', 'solid', 'gradient', 'aurora', 'nebula', 'image'].includes(bgConfig.mode) ? bgConfig.mode : 'default';
+  b.dataset.bg = mode;
+  if (mode === 'default') {
+    b.style.removeProperty('--bg-image');
+    b.style.removeProperty('--bg-custom');
+    b.style.removeProperty('--bg-custom-2');
+    b.style.removeProperty('--bg-scrim-alpha');
+    return;
+  }
+  const color = bgConfig.color || '#5B8CFF';
+  const strength = Math.max(20, Math.min(100, Number(bgConfig.strength) || 60));
+  b.style.setProperty('--bg-custom', color);
+  b.style.setProperty('--bg-custom-2', shadeHex(color, -0.3));
+  b.style.setProperty('--bg-scrim-alpha', String((100 - strength) / 100 * 0.85));
+  if (bgConfig.image) b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
+  else b.style.removeProperty('--bg-image');
+  b.classList.toggle('bg-paused', document.hidden);
+}
+function renderBackgroundUI() {
+  const mode = bgConfig.mode || 'default';
+  document.querySelectorAll('.bg-opt').forEach((b) => b.classList.toggle('active', b.dataset.bg === mode));
+  const color = $('bgColor');
+  if (color) color.value = bgConfig.color || '#5B8CFF';
+  const strength = $('bgStrength');
+  if (strength) strength.value = Math.max(20, Math.min(100, Number(bgConfig.strength) || 60));
+  const sv = $('bgStrengthVal');
+  if (sv) sv.textContent = (bgConfig.strength || 60) + '%';
+  const extra = $('bgExtra');
+  if (extra) extra.hidden = mode === 'default';
+  const colorLabel = document.querySelector('.bg-color-label');
+  if (colorLabel) colorLabel.style.display = mode === 'image' ? 'none' : '';
+  const pick = $('bgPickImage');
+  if (pick) pick.hidden = mode !== 'image';
+  const rem = $('bgRemoveImage');
+  if (rem) rem.hidden = mode !== 'image' || !bgConfig.image;
+  const hint = $('bgHint');
+  if (hint) {
+    hint.textContent = (mode === 'image' && !bgConfig.image)
+      ? '还没有选择图片；点「选择图片」上传一张。'
+      : '动态背景使用纯 CSS 动画，切到后台自动暂停；自定义图片只存本机。';
+  }
+  const solid = document.querySelector('.bg-thumb-solid');
+  if (solid) solid.style.background = bgConfig.color || '#5B8CFF';
+  const grad = document.querySelector('.bg-thumb-gradient');
+  if (grad) grad.style.background = 'linear-gradient(135deg,' + (bgConfig.color || '#5B8CFF') + ',' + shadeHex(bgConfig.color || '#5B8CFF', -0.3) + ')';
+  const img = document.querySelector('.bg-thumb-image');
+  if (img) {
+    img.style.backgroundImage = bgConfig.image ? 'url("' + bgConfig.image + '")' : '';
+    img.style.backgroundSize = 'cover';
+    img.style.backgroundPosition = 'center';
+  }
+}
+function setBg(patch) {
+  bgConfig = Object.assign(getBgConfig(), bgConfig, patch);
+  if (!saveBgConfig()) return;
+  applyBackground();
+  renderBackgroundUI();
+}
+async function compressBgImage(file) {
+  const dataUrl = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result); r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1600;
+      let { width: w, height: h } = img;
+      if (Math.max(w, h) > MAX) {
+        const k = MAX / Math.max(w, h);
+        w = Math.round(w * k); h = Math.round(h * k);
+      }
+      try {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      } catch (e) { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+document.querySelectorAll('.bg-opt').forEach((b) => {
+  b.addEventListener('click', () => {
+    const mode = b.dataset.bg;
+    setBg({ mode });
+    if (mode === 'image' && !bgConfig.image) $('bgImageFile').click();
+  });
+});
+$('bgColor').addEventListener('input', () => {
+  bgConfig.color = $('bgColor').value;
+  applyBackground();
+});
+$('bgColor').addEventListener('change', () => {
+  bgConfig.color = $('bgColor').value;
+  saveBgConfig();
+  renderBackgroundUI();
+});
+$('bgStrength').addEventListener('input', () => {
+  bgConfig.strength = +$('bgStrength').value;
+  const sv = $('bgStrengthVal');
+  if (sv) sv.textContent = bgConfig.strength + '%';
+  applyBackground();
+});
+$('bgStrength').addEventListener('change', () => { saveBgConfig(); });
+$('bgPickImage').onclick = () => $('bgImageFile').click();
+$('bgImageFile').onchange = async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  try {
+    const dataUrl = await compressBgImage(file);
+    if (!dataUrl) throw new Error('读取失败');
+    if (dataUrl.length > 2000000) { toast('图片太大，换一张小一点的'); e.target.value = ''; return; }
+    bgConfig = getBgConfig();
+    bgConfig.image = dataUrl;
+    bgConfig.mode = 'image';
+    if (!saveBgConfig()) { e.target.value = ''; return; }
+    applyBackground();
+    renderBackgroundUI();
+    toast('背景图片已更新');
+  } catch (err) {
+    toast('图片处理失败：' + (err.message || err));
+  }
+  e.target.value = '';
+};
+$('bgRemoveImage').onclick = () => {
+  bgConfig = getBgConfig();
+  bgConfig.image = '';
+  if (bgConfig.mode === 'image') bgConfig.mode = 'default';
+  if (saveBgConfig()) {
+    applyBackground();
+    renderBackgroundUI();
+    toast('已移除背景图片');
+  }
+};
+document.addEventListener('visibilitychange', () => {
+  document.body.classList.toggle('bg-paused', document.hidden);
+});
+
 function getSettings() {
   return Object.assign({ todayBarEnabled: true }, store.get('settings', {}));
 }
@@ -1095,6 +1258,11 @@ function loadSettingsUI() {
   }
   fillAIForm(cfg, cfg.active);
   $('setTodayBar').checked = s.todayBarEnabled !== false;
+  try {
+    bgConfig = getBgConfig();
+    applyBackground();
+    renderBackgroundUI();
+  } catch (e) {}
 }
 
 $('setAiProvider').addEventListener('change', () => {
