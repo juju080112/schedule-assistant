@@ -1010,6 +1010,11 @@
     if (reset) ctWeekOffset = 0;
     var grid = document.getElementById('ctGrid');
     if (!grid) return;
+    /* v1.9.11：没有课表时显示空状态，隐藏空网格 */
+    var emptyEl = document.getElementById('ctEmpty');
+    var isEmpty = !getList().length;
+    if (emptyEl) emptyEl.hidden = !isEmpty;
+    if (grid.style) grid.style.display = isEmpty ? 'none' : '';
 
     /* 周次切换按钮（只绑一次） */
     if (!ctBound) {
@@ -1225,7 +1230,7 @@
   function exportDiagnostics() {
     var p = coursePlugin();
     if (!p || !p.dumpDiagnostics) { toast('当前环境不支持导出诊断（需在 App 内运行）'); return; }
-    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.10' };
+    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.11' };
     try { payload.term = getTerm(); } catch (e) {}
     try { payload.courses = getList(); } catch (e) {}
     try { payload.syncedAt = getSyncAt() ? new Date(getSyncAt()).toISOString() : null; } catch (e) {}

@@ -180,6 +180,7 @@ cp android/keystore.properties.example android/keystore.properties
 
 - `tools/course-logic-test.js`：在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图、自定义时间活动、对账、后台同步结果采纳、14 天原生排程计划、已完成/已移除节次不排提醒、展开幂等等）共 **62 项**。
 - `tools/ai-provider-test.js`：验证模型提供方预设、旧配置迁移、OpenAI / Anthropic 端点与请求头、图片与工具调用转换、响应解析、usage 解析、额外请求头覆盖等 **24 项**。
+- `tools/todo-utils-test.js`：验证解析结果去重（同标题同日期）、过期判断、日期解析等 **5 项**。
 
 ```bash
 node tools/course-logic-test.js
@@ -198,6 +199,7 @@ node tools/ai-provider-test.js
 │   └── js/
 │       ├── app.js              # 日程、解析、AI 助手、通知、常驻栏、主题、使用指南
 │       ├── ai-providers.js     # 模型提供方预设、协议适配、工具调用/图片转换
+│       ├── todo-utils.js       # 解析结果去重、过期判断、日期解析
 │       └── course.js           # 课表：同步流程、周课表网格、课程日程对账
 ├── android/                    # Capacitor 原生工程
 │   └── app/src/main/
@@ -367,6 +369,7 @@ The repo ships two Node test harnesses:
 ```bash
 node tools/course-logic-test.js
 node tools/ai-provider-test.js
+node tools/todo-utils-test.js
 ```
 
 Both run in CI before `cap sync`.

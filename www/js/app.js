@@ -297,8 +297,10 @@ const SYSTEM_PROMPT = `你是一个待办事项与日程提取助手。用户会
 5. 没有截止时间的待办 due 填 null，remind 填 false
 6. 如果内容中没有任何待办或日程，返回 {"todos":[]}
 7. 看到活动截图先判断报名状态：页面出现「取消报名」「已报名」「报名成功」说明用户已经报过名——不要生成报名/截止事项，改为生成「参加活动」事项（标题用「参加/出席 + 活动名」，due 用活动开始时间，detail 写活动时间、地点、主办方，并注明已报名）；只有出现「立即报名」「报名」且用户明确要报名时，才提取报名事项。页面上的「项目状态：报名中」只是项目状态，不等于用户已报名。用户发活动截图通常是想提醒参加，不是提醒报名。
-8. 同一条内容里有多个独立事项时分别输出；detail 保留关键人名、课程名、地点、截止时间，不要把关键人名省略成「等」。
-示例：截图显示「取消报名」、活动举办时间 11/1 19:30、报名截止 11/1 19:00 → 生成「参加××活动」，due=活动开始时间 19:30，detail 写活动时间、地点、主办方（已报名），不要再生成报名截止事项。`;
+8. 同一条内容里有多个**互不包含**的独立事项时分别输出；同一事项的准备工作与活动本身不要拆成两条。detail 保留关键人名、课程名、地点、截止时间，不要把关键人名省略成「等」。
+9. 会议/座谈会通知：如果原文说「由某某同学带到座谈会/代为反馈」，用户的任务是在会前把意见反馈给这些同学；只生成一条反馈事项，due 用会议开始时间（或明确的反馈截止），不要额外生成「参加座谈会」事项。只有原文明确要求用户参加/出席时才生成参加事项。
+示例 A：截图显示「取消报名」、活动举办时间 11/1 19:30、报名截止 11/1 19:00 → 生成「参加××活动」，due=活动开始时间 19:30，detail 写活动时间、地点、主办方（已报名），不要再生成报名截止事项。
+示例 B：通知「10月28日16点开座谈会，意见反馈给甲、乙同学，由他们带到会」→ 只生成「反馈课程意见」，due=2026-10-28 16:00，detail 保留甲、乙姓名；不要生成「参加座谈会」。`;
 
 function buildUserContent(text) {
   const now = new Date();
@@ -354,7 +356,9 @@ $('btnParse').onclick = async () => {
       ], { model: p.textModel });
     }
 
-    const parsed = parseModelJson(aiResult.content || '');
+    const rawList = parseModelJson(aiResult.content || '');
+    const parsed = TodoUtils.dedupeParsed(rawList);
+    if (parsed.length < rawList.length) toast(`已合并 ${rawList.length - parsed.length} 条重复事项`);
     lastParsed = parsed;
     renderParseResult(parsed);
     status.textContent = '';
@@ -395,10 +399,15 @@ function renderParseResult(todos) {
     div.className = 'result-item';
     const due = parseDue(t.due);
     const isSched = due && t.remind;
+    const past = TodoUtils.isPastDue(t);
+    const tagText = past ? '已过期' : (isSched ? '日程' : '待安排');
+    const tagClass = past ? 'past' : (isSched ? 'sched' : '');
     div.innerHTML = `
-      <span class="tag ${isSched ? 'sched' : ''}">${isSched ? '日程' : '待安排'}</span>
-      <span>${escapeHtml(t.title)}${t.detail ? `<span class="due">${escapeHtml(t.detail)}</span>` : ''}${due ? `<span class="due">⏰ ${fmtDate(due)}</span>` : ''}</span>
-      <button class="rm-item" title="移除这条">✕</button>`;
+      <span class="tag ${tagClass}">${tagText}</span>
+      <span>${escapeHtml(t.title)}${t.detail ? `<span class="due">${escapeHtml(t.detail)}</span>` : ''}${due ? `<span class="due"${past ? ' style="color:var(--danger)"' : ''}>⏰ ${fmtDate(due)}${past ? '（已过期）' : ''}</span>` : ''}</span>
+      <button class="edit-item" title="编辑这条" aria-label="编辑">✎</button>
+      <button class="rm-item" title="移除这条" aria-label="移除">✕</button>`;
+    div.querySelector('.edit-item').onclick = () => openParsedEdit(idx);
     div.querySelector('.rm-item').onclick = () => {
       lastParsed.splice(idx, 1);
       renderParseResult(lastParsed);
@@ -411,7 +420,72 @@ function renderParseResult(todos) {
 $('btnDiscardResult').onclick = () => {
   lastParsed = null;
   $('parseResult').hidden = true;
+  $('parseStatus').textContent = '';
 };
+
+/* v1.9.11：解析页清空 */
+$('btnClearParse').onclick = () => {
+  $('inputText').value = '';
+  attachments.length = 0;
+  try { renderAttachments(); } catch (e) {}
+  const fi = $('fileImage'), fd = $('fileDoc');
+  if (fi) fi.value = '';
+  if (fd) fd.value = '';
+  lastParsed = null;
+  $('parseResult').hidden = true;
+  $('parseStatus').textContent = '';
+  toast('已清空输入');
+};
+
+/* v1.9.11：日程快速添加 + 空状态 */
+function quickAddTodo() {
+  const inp = $('quickAddInput');
+  const title = inp.value.trim();
+  if (!title) { toast('请输入待办标题'); inp.focus(); return; }
+  const todos = getTodos();
+  todos.push({
+    id: Date.now(),
+    title,
+    detail: '',
+    done: false,
+    createdAt: Date.now(),
+    due: null,
+    remind: false
+  });
+  saveTodos(todos);
+  inp.value = '';
+  renderSchedule();
+  toast('已添加，点卡片可设时间');
+}
+$('quickAddBtn').onclick = quickAddTodo;
+$('quickAddInput').addEventListener('keydown', (e) => {
+  if (e.isComposing) return;
+  if (e.key === 'Enter') { e.preventDefault(); quickAddTodo(); }
+});
+$('emptyParse').onclick = () => {
+  showPage('page-input');
+  setTimeout(() => { const el = $('inputText'); if (el) el.focus(); }, 120);
+};
+
+/* v1.9.11：课程表空状态 */
+const ctEmptySyncBtn = $('ctEmptySync');
+if (ctEmptySyncBtn) {
+  ctEmptySyncBtn.onclick = () => {
+    showPage('page-coursetable');
+    try { if (window.CourseSync && window.CourseSync.sync) window.CourseSync.sync(); } catch (e) {}
+  };
+}
+
+/* v1.9.11：API Key 显隐 */
+const keyToggle = $('btnToggleKey');
+if (keyToggle) {
+  keyToggle.onclick = () => {
+    const inp = $('setApiKey');
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    keyToggle.textContent = show ? '隐藏' : '显示';
+  };
+}
 
 /* ============ 重复事项识别与合并（v1.7.5） ============ */
 /* 标题归一化：忽略大小写、空白与中英文标点，用于判断两次通知是否同一活动 */
@@ -744,6 +818,7 @@ function scheduleCard(t, all) {
     saveTodos(all); renderSchedule();
   };
   div.querySelector('.del').onclick = async () => {
+    if (!confirm(t.courseKey ? '确定删除这一天的这节课吗？删除后不会再生成。' : '确定删除这一项吗？')) return;
     await cancelNotification(t);
     /* v1.8.12：删除课程日程 → 永久关闭该节次，不再重新生成、也不再提醒 */
     if (t.courseKey) {
@@ -1684,6 +1759,45 @@ $('btnChatClear').onclick = () => {
 
 /* ============ 详情面板 ============ */
 let detailId = null;
+let editParsedIndex = null;
+
+function setRemindHint(hasDue, remind, isParsed) {
+  const el = $('dRemindHint');
+  if (!el) return;
+  if (!hasDue) { el.textContent = '未设提醒'; return; }
+  if (isParsed) { el.textContent = '保存解析结果后，会按此时间设置提醒（准点 + 提前 1 小时）'; return; }
+  el.textContent = remind ? '已设提醒：准点 + 提前 1 小时' : '已设时间，但提醒未开启';
+}
+
+function setDetailMode(mode) {
+  const parsed = mode === 'parsed';
+  $('detailTitle').textContent = parsed ? '编辑解析项' : '详情';
+  $('dSave').textContent = '保存修改';
+  $('dToggleDone').hidden = parsed;
+  $('dDelete').parentElement.hidden = parsed;
+  const sg = $('dSrcGroup');
+  if (sg) sg.hidden = true;
+}
+
+function fmtDueStr(ts) {
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function openParsedEdit(idx) {
+  const t = lastParsed && lastParsed[idx];
+  if (!t) return;
+  editParsedIndex = idx;
+  detailId = null;
+  setDetailMode('parsed');
+  $('dTitle').value = t.title || '';
+  $('dDetail').value = t.detail || '';
+  $('dDue').value = tsToLocalInput(parseDue(t.due));
+  $('dCreated').textContent = '解析结果（未保存）';
+  setRemindHint(!!t.due, !!t.remind, true);
+  $('detailMask').hidden = false;
+}
 
 function tsToLocalInput(ts) {
   if (!ts) return '';
@@ -1703,12 +1817,15 @@ function openDetail(id) {
   const t = getTodos().find((x) => x.id === id);
   if (!t) return;
   if (!$('detailMask').hidden && detailId === id) return;
+  editParsedIndex = null;
+  setDetailMode('todo');
   detailId = id;
   $('dTitle').value = t.title;
   $('dDetail').value = t.detail || '';
   $('dDue').value = tsToLocalInput(t.due);
   $('dCreated').textContent = fmtDate(t.createdAt);
   $('dToggleDone').textContent = t.done ? '标记为未完成' : '标记完成';
+  setRemindHint(!!t.due, !!t.remind, false);
   /* v1.8.7：有原始来源（粘贴的文字 / 图片 / 文件）时显示查看入口 */
   const sg = $('dSrcGroup');
   if (sg) sg.hidden = !(Array.isArray(t.srcs) && t.srcs.length);
@@ -1717,6 +1834,8 @@ function openDetail(id) {
 function closeDetail() {
   $('detailMask').hidden = true;
   detailId = null;
+  editParsedIndex = null;
+  setDetailMode('todo');
 }
 
 /* ============ 原始来源查看（v1.8.7） ============ */
@@ -1755,6 +1874,21 @@ $('detailClose').onclick = closeDetail;
 $('detailMask').addEventListener('click', (e) => { if (e.target === $('detailMask')) closeDetail(); });
 
 $('dSave').onclick = async () => {
+  if (editParsedIndex != null) {
+    const t = lastParsed && lastParsed[editParsedIndex];
+    if (!t) return closeDetail();
+    const title = $('dTitle').value.trim();
+    if (!title) { toast('标题不能为空'); return; }
+    const dueTs = localInputToTs($('dDue').value);
+    t.title = title;
+    t.detail = $('dDetail').value.trim();
+    t.due = dueTs ? fmtDueStr(dueTs) : null;
+    t.remind = !!dueTs;
+    closeDetail();
+    renderParseResult(lastParsed);
+    toast('已更新解析结果');
+    return;
+  }
   if (detailId == null) return;
   const todos = getTodos();
   const t = todos.find((x) => x.id === detailId);
@@ -1799,6 +1933,28 @@ $('dDelete').onclick = async () => {
   renderSchedule();
   toast('已删除');
 };
+
+/* v1.9.11：Android 返回键优先关闭弹层/子页，根页面再退出 */
+function capacitorApp() {
+  try {
+    if (window.__cap && window.__cap.App) return window.__cap.App;
+    if (window.Capacitor && typeof window.Capacitor.registerPlugin === 'function') {
+      return window.Capacitor.registerPlugin('App');
+    }
+  } catch (e) {}
+  return null;
+}
+try {
+  const capApp = capacitorApp();
+  if (capApp && capApp.addListener && capApp.exitApp) {
+    capApp.addListener('backButton', () => {
+      if ($('srcMask') && !$('srcMask').hidden) { closeSourceViewer(); return; }
+      if ($('detailMask') && !$('detailMask').hidden) { closeDetail(); return; }
+      if ($('settingsSub') && !$('settingsSub').hidden) { closeSettingsSub(); return; }
+      capApp.exitApp();
+    });
+  }
+} catch (e) {}
 
 /* ============ 启动 ============ */
 (async function init() {
