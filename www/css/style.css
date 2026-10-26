@@ -206,7 +206,7 @@ textarea { resize: none; line-height: 1.6; }
 .form-group .req { color: var(--danger); font-size: 11.5px; font-weight: 400; }
 .form-group .hint { font-size: 12px; color: var(--text-sub); margin-top: 7px; line-height: 1.6; }
 .form-group .hint code, .privacy-note code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; background: var(--bg-input); padding: 1px 4px; border-radius: 4px; }
-.ai-advanced { margin: 2px 0 18px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--bg-input); }
+.ai-advanced { margin: 2px 0 18px; border: none; border-radius: 12px; padding: 12px 14px; background: var(--glass-bg); }
 .ai-advanced summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-sub); }
 .ai-advanced .form-group { margin: 12px 0 0; }
 .ai-advanced textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
@@ -324,10 +324,8 @@ body.sub-open #page-settings, body.sub-open .tabbar { visibility: hidden; }
 .sheet-header {
   display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 5;
-  background: var(--glass-header);
-  backdrop-filter: saturate(170%) brightness(1.08);
-  -webkit-backdrop-filter: saturate(170%) brightness(1.08);
-  padding: calc(var(--status-bar) + 4px) 0 16px;
+  background: var(--glass-sheet);
+  padding: calc(var(--status-bar) + 2px) 0 8px;
 }
 .sheet-header h3 { font-size: 18px; font-weight: 700; }
 #settingsSub .sheet-header { justify-content: flex-start; gap: 8px; }
@@ -483,7 +481,7 @@ body.sub-open #page-settings, body.sub-open .tabbar { visibility: hidden; }
 
 /* 设置子页：隐私说明与课表预览 */
 .privacy-note {
-  background: var(--privacy-bg); border: 1px solid var(--privacy-border); border-radius: var(--radius);
+  background: rgba(56, 165, 106, .12); border: none; border-radius: var(--radius);
   padding: 14px 15px; margin-bottom: 16px;
 }
 .privacy-note b { font-size: 13.5px; color: var(--privacy-title); }
