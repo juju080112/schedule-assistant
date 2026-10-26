@@ -96,8 +96,9 @@ body {
 .header h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; color: var(--text); text-shadow: 0 1px 3px rgba(255, 255, 255, .55); }
 .header-action {
   position: absolute; right: 22px; bottom: 18px;
-  background: var(--glass-bg); color: var(--text-sub);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5);
+  border: none;
+  background: var(--glass-bg); color: var(--text);
+  box-shadow: var(--glass-inset);
   font-size: 12px; padding: 6px 13px; border-radius: 14px;
 }
 .header-action:active { background: var(--glass-bg-strong); }
@@ -334,6 +335,19 @@ body.sub-open #page-settings, body.sub-open .tabbar { visibility: hidden; }
   background: transparent;
   padding: calc(var(--status-bar) + 2px) 0 6px;
 }
+/* 详情页：标题融入页面，关闭按钮固定右上角 */
+#detailMask .sheet-header {
+  position: static;
+  background: transparent;
+  padding: calc(var(--status-bar) + 2px) 0 6px;
+}
+#detailClose {
+  position: fixed; right: 18px; top: calc(var(--status-bar) + 4px); z-index: 6;
+  width: 34px; height: 34px; border-radius: 50%; border: none;
+  background: var(--glass-bg-strong); color: var(--text-sub);
+  box-shadow: var(--glass-inset);
+  font-size: 16px; padding: 0;
+}
 .sub-back {
   width: 34px; height: 34px; margin-left: -6px; padding: 0;
   border: none; background: none; color: var(--text);
@@ -385,7 +399,8 @@ body.sub-open #page-settings, body.sub-open .tabbar { visibility: hidden; }
 #page-chat .header { position: sticky; top: 0; z-index: 20; flex: none; padding-bottom: 12px; }
 .chat-clear {
   position: absolute; right: 0; bottom: 12px;
-  border: none; background: var(--bg-chip); color: var(--text-sub);
+  border: none; background: var(--glass-bg); color: var(--text);
+  box-shadow: var(--glass-inset);
   font-size: 12px; padding: 5px 12px; border-radius: 14px;
 }
 /* min-height:0 关键：否则 flex 子项按内容撑高，整页滚动、顶栏被带走 */
