@@ -66,6 +66,15 @@
   color-scheme: light;
 }
 
+/* 动态背景视频层（v1.9.22） */
+.bg-video-wrap { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
+.bg-video-wrap[hidden] { display: none; }
+.bg-video-wrap video { position: absolute; left: 50%; top: 50%; transform-origin: center center; }
+.bg-video-scrim {
+  position: absolute; inset: 0;
+  background: rgba(var(--bg-scrim-rgb), var(--bg-scrim-alpha, .3));
+}
+
 html { height: 100%; }
 body {
   font-family: "HarmonyOS Sans SC", "MiSans", -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
@@ -105,7 +114,7 @@ body {
 .header .sub { font-size: 12.5px; color: var(--text-sub); margin-top: 6px; font-weight: 400; }
 
 .content { padding: 10px 16px 28px; }
-.page { display: none; }
+.page { display: none; position: relative; z-index: 1; }
 .page.active { display: block; }
 
 textarea, input[type=text], input[type=password], input[type=datetime-local], select {
@@ -726,7 +735,9 @@ body[data-bg="image"] {
   background-attachment: fixed;
 }
 body[data-bg="image"] #scheduleList .date-head,
-body[data-bg="image"] .course-date-head {
+body[data-bg="video"] #scheduleList .date-head,
+body[data-bg="image"] .course-date-head,
+body[data-bg="video"] .course-date-head {
   display: inline-block;
   align-self: flex-start;
   padding: 3px 10px;
@@ -734,4 +745,40 @@ body[data-bg="image"] .course-date-head {
   background: var(--glass-bg);
   color: var(--text);
 }
-body[data-bg="image"] #doneBlock .date-head { color: var(--text); }
+body[data-bg="image"] #doneBlock .date-head,
+body[data-bg="video"] #doneBlock .date-head { color: var(--text); }
+
+/* ================= v1.9.22 背景裁剪 ================= */
+.crop-mask { z-index: 60; background: rgba(4, 7, 12, .88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); align-items: center; justify-content: center; }
+.crop-sheet {
+  width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center;
+  padding: calc(var(--status-bar) + 6px) 14px calc(16px + var(--tab-safe)); gap: 12px;
+}
+.crop-head { width: 100%; display: flex; align-items: center; justify-content: space-between; color: #fff; font-size: 15px; }
+.crop-btn { border: none; background: none; color: #fff; font-size: 15px; padding: 8px; }
+.crop-done { font-weight: 700; }
+.crop-stage {
+  position: relative; overflow: hidden; border-radius: 14px;
+  background: rgba(0, 0, 0, .35); touch-action: none; flex: none;
+}
+.crop-stage img, .crop-stage video {
+  position: absolute; left: 50%; top: 50%;
+  transform-origin: center center; pointer-events: none;
+}
+.crop-grid {
+  position: absolute; inset: 0; pointer-events: none; opacity: .7;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .28) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .28) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+}
+.crop-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  color: rgba(255, 255, 255, .85); font-size: 12px; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
+.crop-tools { width: 100%; display: flex; gap: 10px; }
+.crop-tool { flex: 1; border: none; background: rgba(255, 255, 255, .16); color: #fff; border-radius: 12px; padding: 11px; font-size: 14px; }
+.crop-zoom { width: 100%; display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13px; }
+.crop-zoom input[type=range] { flex: 1; accent-color: #fff; }
+#cropZoomVal { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }

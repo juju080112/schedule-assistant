@@ -15,6 +15,11 @@
   <script src="lib/mammoth.browser.min.js" defer></script>
 </head>
 <body>
+  <!-- 动态背景视频层（v1.9.22） -->
+  <div id="bgVideoWrap" class="bg-video-wrap" hidden>
+    <video id="bgVideo" muted loop playsinline preload="auto"></video>
+    <div class="bg-video-scrim"></div>
+  </div>
   <!-- 页面：智能解析 -->
   <div class="page" id="page-input">
     <header class="header">
@@ -134,7 +139,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.21</p>
+      <p class="version">日程助手 v1.9.22</p>
     </div>
   </div>
 
@@ -200,6 +205,15 @@
           </div>
           <input type="file" id="bgImageFile" accept="image/*" hidden>
           <div class="hint" id="bgHint">选一张本地图片作为背景，自动压缩后只存本机；不选则用默认背景。</div>
+        </div>
+        <div class="form-group">
+          <label>动态背景（视频）</label>
+          <div class="bg-image-row">
+            <button class="btn-ghost" id="bgPickVideo" type="button">选择视频</button>
+            <button class="btn-ghost" id="bgRemoveVideo" type="button" hidden>移除视频</button>
+          </div>
+          <input type="file" id="bgVideoFile" accept="video/mp4,video/webm,video/*" hidden>
+          <div class="hint" id="bgVideoHint">选择 mp4 / webm，循环静音播放，切到后台自动暂停；视频只存本机。与背景图片二选一。</div>
         </div>
         <div class="form-group" id="bgStrengthGroup" hidden>
           <label>背景强度</label>
@@ -396,5 +410,31 @@
   <script src="js/todo-utils.js" defer></script>
   <script src="js/app.js" defer></script>
   <script src="js/course.js" defer></script>
+  <!-- 背景裁剪（v1.9.22） -->
+  <div id="cropMask" class="mask crop-mask" hidden>
+    <div class="crop-sheet">
+      <div class="crop-head">
+        <button class="crop-btn" id="cropCancel" type="button">取消</button>
+        <b>调整背景</b>
+        <button class="crop-btn crop-done" id="cropDone" type="button">完成</button>
+      </div>
+      <div class="crop-stage" id="cropStage">
+        <img id="cropImg" alt="" hidden>
+        <video id="cropVideo" muted loop playsinline hidden></video>
+        <div class="crop-grid" aria-hidden="true"></div>
+        <div class="crop-hint">拖动调整位置</div>
+      </div>
+      <div class="crop-tools">
+        <button class="crop-tool" id="cropRotate" type="button">旋转 90°</button>
+        <button class="crop-tool" id="cropReset" type="button">重置</button>
+      </div>
+      <div class="crop-zoom">
+        <span>缩放</span>
+        <input type="range" id="cropZoom" min="100" max="400" step="5" value="100">
+        <span id="cropZoomVal">100%</span>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

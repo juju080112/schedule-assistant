@@ -56,46 +56,74 @@ const store = {
 
 /* ============ v1.9.14 外观：自定义背景 ============ */
 const BG_KEY = 'backgroundSettings';
-let bgConfig = { strength: 60, image: '' };
+let bgConfig = { strength: 60, image: '', video: '' };
 
 function getBgConfig() {
   const saved = store.get(BG_KEY, {}) || {};
   return {
     strength: Math.max(20, Math.min(100, Number(saved.strength) || 60)),
-    image: typeof saved.image === 'string' ? saved.image : ''
+    image: typeof saved.image === 'string' ? saved.image : '',
+    video: typeof saved.video === 'string' ? saved.video : '',
+    videoCrop: (saved.videoCrop && typeof saved.videoCrop === 'object') ? saved.videoCrop : null
   };
 }
 function saveBgConfig() {
   try { store.set(BG_KEY, bgConfig); return true; }
-  catch (e) { toast('背景设置保存失败，图片可能太大'); return false; }
+  catch (e) { toast('背景设置保存失败'); return false; }
 }
-function applyBackground() {
+async function applyBackground() {
   const b = document.body;
-  if (!bgConfig.image) {
-    b.dataset.bg = 'default';
-    b.style.removeProperty('--bg-image');
-    b.style.removeProperty('--bg-scrim-alpha');
+  const wrap = $('bgVideoWrap');
+  const v = $('bgVideo');
+  b.style.setProperty('--bg-scrim-alpha', String((100 - bgConfig.strength) / 100 * 0.85));
+  if (bgConfig.image) {
+    b.dataset.bg = 'image';
+    b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
+    if (wrap) wrap.hidden = true;
+    if (v) v.pause();
     return;
   }
-  b.dataset.bg = 'image';
-  b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
-  b.style.setProperty('--bg-scrim-alpha', String((100 - bgConfig.strength) / 100 * 0.85));
+  if (bgConfig.video) {
+    const url = await ensureBgVideo();
+    if (url) {
+      b.dataset.bg = 'video';
+      b.style.removeProperty('--bg-image');
+      if (wrap) wrap.hidden = false;
+      if (v) { applyVideoCrop(); v.play().catch(() => {}); }
+      return;
+    }
+    bgConfig.video = '';
+    saveBgConfig();
+  }
+  b.dataset.bg = 'default';
+  b.style.removeProperty('--bg-image');
+  if (wrap) wrap.hidden = true;
+  if (v) v.pause();
 }
 function renderBackgroundUI() {
-  const has = !!bgConfig.image;
+  const hasImg = !!bgConfig.image;
+  const hasVid = !!bgConfig.video;
   const sv = $('bgStrengthVal');
   if (sv) sv.textContent = bgConfig.strength + '%';
   const strength = $('bgStrength');
   if (strength) strength.value = bgConfig.strength;
   const group = $('bgStrengthGroup');
-  if (group) group.hidden = !has;
-  const rem = $('bgRemoveImage');
-  if (rem) rem.hidden = !has;
+  if (group) group.hidden = !(hasImg || hasVid);
+  const remImg = $('bgRemoveImage');
+  if (remImg) remImg.hidden = !hasImg;
+  const remVid = $('bgRemoveVideo');
+  if (remVid) remVid.hidden = !hasVid;
   const hint = $('bgHint');
   if (hint) {
-    hint.textContent = has
-      ? '当前使用自定义背景，可重新选择或移除；图片只存本机。'
-      : '选一张本地图片作为背景，自动压缩后只存本机；不选则用默认背景。';
+    hint.textContent = hasImg
+      ? '当前使用自定义图片背景，可重新选择或移除；图片只存本机。'
+      : (hasVid ? '当前使用动态视频背景，图片已停用。' : '选一张本地图片作为背景，自动压缩后只存本机；不选则用默认背景。');
+  }
+  const vh = $('bgVideoHint');
+  if (vh) {
+    vh.textContent = hasVid
+      ? '当前使用动态视频背景，可重新选择或移除；视频只存本机。'
+      : (hasImg ? '图片背景下视频不生效；选择视频会替换图片。' : '选择 mp4 / webm，循环静音播放，切到后台自动暂停；视频只存本机。');
   }
 }
 async function compressBgImage(file) {
@@ -124,24 +152,277 @@ async function compressBgImage(file) {
     img.src = dataUrl;
   });
 }
-$('bgPickImage').onclick = () => $('bgImageFile').click();
-$('bgImageFile').onchange = async (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  try {
-    const dataUrl = await compressBgImage(file);
-    if (!dataUrl) throw new Error('读取失败');
-    if (dataUrl.length > 2000000) { toast('图片太大，换一张小一点的'); e.target.value = ''; return; }
+/* ---- 动态背景视频：Blob 存 IndexedDB（v1.9.22） ---- */
+function bgDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('aitodo-bg', 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains('files')) req.result.createObjectStore('files');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function bgVideoSave(blob, name) {
+  return bgDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').put({ blob, name }, 'bgVideo');
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+function bgVideoLoad() {
+  return bgDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction('files', 'readonly');
+    const req = tx.objectStore('files').get('bgVideo');
+    req.onsuccess = () => { db.close(); resolve(req.result || null); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  }));
+}
+function bgVideoClear() {
+  return bgDb().then((db) => new Promise((resolve) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').delete('bgVideo');
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); resolve(); };
+  })).catch(() => {});
+}
+let bgVideoObjUrl = '';
+let bgVideoLoadedFor = '';
+async function ensureBgVideo() {
+  if (!bgConfig.video) return '';
+  if (bgVideoObjUrl && bgVideoLoadedFor === bgConfig.video) return bgVideoObjUrl;
+  const rec = await bgVideoLoad();
+  if (!rec || !rec.blob) return '';
+  if (bgVideoObjUrl) URL.revokeObjectURL(bgVideoObjUrl);
+  bgVideoObjUrl = URL.createObjectURL(rec.blob);
+  bgVideoLoadedFor = bgConfig.video;
+  const v = $('bgVideo');
+  if (v) {
+    v.onloadedmetadata = () => applyVideoCrop();
+    v.src = bgVideoObjUrl;
+    v.load();
+  }
+  return bgVideoObjUrl;
+}
+
+/* ---- 背景裁剪：拖动 / 缩放 / 旋转（v1.9.22） ---- */
+let cropState = null;
+
+function cropCoverScale(bw, bh, sw, sh, rotate) {
+  const r = ((rotate % 360) + 360) % 360;
+  if (r === 90 || r === 270) return Math.max(sw / bh, sh / bw);
+  return Math.max(sw / bw, sh / bh);
+}
+
+function cropLayout() {
+  const st = $('cropStage');
+  const maxW = window.innerWidth - 28;
+  const maxH = window.innerHeight * 0.6;
+  const ar = window.innerWidth / window.innerHeight;
+  let w = maxW, h = w / ar;
+  if (h > maxH) { h = maxH; w = h * ar; }
+  st.style.width = Math.round(w) + 'px';
+  st.style.height = Math.round(h) + 'px';
+  cropState.stageW = w;
+  cropState.stageH = h;
+}
+
+function cropFitMedia() {
+  const mediaAR = cropState.vw / cropState.vh;
+  const stageAR = cropState.stageW / cropState.stageH;
+  if (mediaAR > stageAR) {
+    cropState.baseW = cropState.stageW;
+    cropState.baseH = cropState.stageW / mediaAR;
+  } else {
+    cropState.baseH = cropState.stageH;
+    cropState.baseW = cropState.stageH * mediaAR;
+  }
+}
+
+function cropApply() {
+  if (!cropState) return;
+  const el = cropState.kind === 'image' ? $('cropImg') : $('cropVideo');
+  const scale = cropState.minScale * cropState.relScale;
+  el.style.width = cropState.baseW + 'px';
+  el.style.height = cropState.baseH + 'px';
+  el.style.transform = 'translate(-50%, -50%) translate(' + cropState.tx + 'px, ' + cropState.ty + 'px) scale(' + scale + ') rotate(' + cropState.rotate + 'deg)';
+  const zv = $('cropZoomVal');
+  if (zv) zv.textContent = Math.round(cropState.relScale * 100) + '%';
+  const z = $('cropZoom');
+  if (z) z.value = String(Math.round(cropState.relScale * 100));
+}
+
+function cropReset() {
+  if (!cropState) return;
+  cropState.tx = 0;
+  cropState.ty = 0;
+  cropState.rotate = 0;
+  cropState.relScale = 1;
+  cropFitMedia();
+  cropState.minScale = cropCoverScale(cropState.baseW, cropState.baseH, cropState.stageW, cropState.stageH, 0);
+  cropApply();
+}
+
+function openCropImage(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    cropState = {
+      kind: 'image', el: img, url: url, blob: file,
+      vw: img.naturalWidth, vh: img.naturalHeight,
+      stageW: 0, stageH: 0, baseW: 0, baseH: 0,
+      tx: 0, ty: 0, rotate: 0, minScale: 1, relScale: 1
+    };
+    const ci = $('cropImg');
+    ci.src = url;
+    ci.hidden = false;
+    const cv = $('cropVideo');
+    cv.pause();
+    cv.removeAttribute('src');
+    cv.hidden = true;
+    $('cropMask').hidden = false;
+    cropLayout();
+    cropReset();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('图片读取失败'); };
+  img.src = url;
+}
+
+function openCropVideo(file) {
+  const url = URL.createObjectURL(file);
+  const v = $('cropVideo');
+  v.pause();
+  v.removeAttribute('src');
+  v.src = url;
+  v.hidden = false;
+  $('cropImg').hidden = true;
+  $('cropMask').hidden = false;
+  const onMeta = () => {
+    v.onloadedmetadata = null;
+    cropState = {
+      kind: 'video', el: v, url: url, blob: file,
+      vw: v.videoWidth, vh: v.videoHeight,
+      stageW: 0, stageH: 0, baseW: 0, baseH: 0,
+      tx: 0, ty: 0, rotate: 0, minScale: 1, relScale: 1
+    };
+    cropLayout();
+    cropReset();
+    v.play().catch(() => {});
+  };
+  v.onloadedmetadata = onMeta;
+  v.onerror = () => { URL.revokeObjectURL(url); $('cropMask').hidden = true; toast('视频读取失败'); };
+}
+
+function closeCrop() {
+  const url = cropState && cropState.url;
+  cropState = null;
+  $('cropMask').hidden = true;
+  const ci = $('cropImg');
+  ci.hidden = true;
+  ci.removeAttribute('src');
+  const cv = $('cropVideo');
+  cv.pause();
+  cv.removeAttribute('src');
+  cv.hidden = true;
+  if (url) URL.revokeObjectURL(url);
+}
+
+async function cropDone() {
+  if (!cropState) return;
+  const st = cropState;
+  if (st.kind === 'image') {
+    const k = Math.min(2, 1600 / Math.max(st.stageW, st.stageH));
+    const c = document.createElement('canvas');
+    c.width = Math.round(st.stageW * k);
+    c.height = Math.round(st.stageH * k);
+    const ctx = c.getContext('2d');
+    ctx.scale(k, k);
+    ctx.translate(st.stageW / 2 + st.tx, st.stageH / 2 + st.ty);
+    ctx.rotate(st.rotate * Math.PI / 180);
+    const sc = st.minScale * st.relScale;
+    ctx.scale(sc, sc);
+    ctx.drawImage(st.el, -st.baseW / 2, -st.baseH / 2, st.baseW, st.baseH);
+    const dataUrl = c.toDataURL('image/jpeg', .85);
+    if (!dataUrl) { toast('图片处理失败'); return; }
+    if (dataUrl.length > 2000000) { toast('裁剪后仍太大，换一张小一点的'); return; }
     bgConfig = getBgConfig();
     bgConfig.image = dataUrl;
-    if (!saveBgConfig()) { e.target.value = ''; return; }
+    bgConfig.video = '';
+    bgConfig.videoCrop = null;
+    await bgVideoClear();
+    if (!saveBgConfig()) return;
+    closeCrop();
     applyBackground();
     renderBackgroundUI();
     toast('背景图片已更新');
-  } catch (err) {
-    toast('图片处理失败：' + (err.message || err));
+    return;
   }
+  try {
+    await bgVideoSave(st.blob, st.blob.name || 'video');
+    bgConfig = getBgConfig();
+    bgConfig.video = st.blob.name || 'video';
+    bgConfig.image = '';
+    bgConfig.videoCrop = {
+      txPct: st.tx / st.stageW,
+      tyPct: st.ty / st.stageH,
+      scale: st.minScale * st.relScale,
+      rotate: st.rotate
+    };
+    if (!saveBgConfig()) throw new Error('保存失败');
+    bgVideoLoadedFor = '';
+    closeCrop();
+    await applyBackground();
+    renderBackgroundUI();
+    toast('动态背景已更新');
+  } catch (err) {
+    toast('视频保存失败：' + (err.message || err));
+  }
+}
+
+(function bindCrop() {
+  const st = $('cropStage');
+  let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  st.addEventListener('pointerdown', (e) => {
+    if (!cropState) return;
+    dragging = true;
+    sx = e.clientX; sy = e.clientY;
+    ox = cropState.tx; oy = cropState.ty;
+    try { st.setPointerCapture(e.pointerId); } catch (x) {}
+  });
+  st.addEventListener('pointermove', (e) => {
+    if (!dragging || !cropState) return;
+    cropState.tx = ox + (e.clientX - sx);
+    cropState.ty = oy + (e.clientY - sy);
+    cropApply();
+  });
+  const end = () => { dragging = false; };
+  st.addEventListener('pointerup', end);
+  st.addEventListener('pointercancel', end);
+})();
+$('cropRotate').onclick = () => {
+  if (!cropState) return;
+  cropState.rotate = (cropState.rotate + 90) % 360;
+  cropState.tx = 0; cropState.ty = 0;
+  cropState.minScale = cropCoverScale(cropState.baseW, cropState.baseH, cropState.stageW, cropState.stageH, cropState.rotate);
+  cropApply();
+};
+$('cropReset').onclick = () => { cropReset(); };
+$('cropZoom').addEventListener('input', () => {
+  if (!cropState) return;
+  cropState.relScale = Math.max(1, (+$('cropZoom').value) / 100);
+  cropApply();
+});
+$('cropCancel').onclick = () => closeCrop();
+$('cropDone').onclick = () => cropDone();
+$('cropMask').addEventListener('click', (e) => { if (e.target === $('cropMask')) closeCrop(); });
+
+$('bgPickImage').onclick = () => $('bgImageFile').click();
+$('bgImageFile').onchange = (e) => {
+  const file = e.target.files && e.target.files[0];
   e.target.value = '';
+  if (!file) return;
+  openCropImage(file);
 };
 $('bgRemoveImage').onclick = () => {
   bgConfig = getBgConfig();
@@ -152,6 +433,32 @@ $('bgRemoveImage').onclick = () => {
     toast('已移除背景图片');
   }
 };
+
+$('bgPickVideo').onclick = () => $('bgVideoFile').click();
+$('bgVideoFile').onchange = (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!/^video\//.test(file.type || '')) { toast('请选择视频文件'); return; }
+  if (file.size > 200 * 1024 * 1024) { toast('视频太大（上限 200MB）'); return; }
+  openCropVideo(file);
+};
+$('bgRemoveVideo').onclick = async () => {
+  bgConfig = getBgConfig();
+  bgConfig.video = '';
+  await bgVideoClear();
+  saveBgConfig();
+  applyBackground();
+  renderBackgroundUI();
+  toast('已移除动态背景');
+};
+document.addEventListener('visibilitychange', () => {
+  const v = $('bgVideo');
+  if (!v) return;
+  if (document.hidden) { v.pause(); return; }
+  if (document.body.dataset.bg === 'video') v.play().catch(() => {});
+});
+
 $('bgStrength').addEventListener('input', () => {
   bgConfig.strength = +$('bgStrength').value;
   const sv = $('bgStrengthVal');
@@ -159,6 +466,26 @@ $('bgStrength').addEventListener('input', () => {
   applyBackground();
 });
 $('bgStrength').addEventListener('change', () => { saveBgConfig(); });
+function applyVideoCrop() {
+  const v = $('bgVideo');
+  if (!v || !v.videoWidth) return;
+  const crop = bgConfig.videoCrop;
+  const sw = window.innerWidth, sh = window.innerHeight;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const ar = vw / vh, sar = sw / sh;
+  let bw, bh;
+  if (ar > sar) { bw = sw; bh = sw / ar; } else { bh = sh; bw = sh * ar; }
+  const rotate = crop ? crop.rotate : 0;
+  const scale = crop ? crop.scale : cropCoverScale(bw, bh, sw, sh, rotate);
+  const tx = crop ? crop.txPct * sw : 0;
+  const ty = crop ? crop.tyPct * sh : 0;
+  v.style.width = bw + 'px';
+  v.style.height = bh + 'px';
+  v.style.transform = 'translate(-50%, -50%) translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ') rotate(' + rotate + 'deg)';
+}
+window.addEventListener('resize', () => {
+  if (document.body.dataset.bg === 'video') applyVideoCrop();
+});
 
 function getSettings() {
   return Object.assign({ todayBarEnabled: true }, store.get('settings', {}));
