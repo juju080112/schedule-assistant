@@ -16,52 +16,18 @@ window.addEventListener('error', function (e) {
   } catch (x) {}
 });
 
-/* ============ 主题模式（v1.8.0：浅色 / 深色 / 跟随系统） ============ */
-const THEME_KEY = 'themeMode';
-function getThemeMode() {
-  const m = store.get(THEME_KEY, 'system');
-  return (m === 'light' || m === 'dark') ? m : 'system';
-}
-function systemPrefersDark() {
-  try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { return false; }
-}
-function applyTheme(mode) {
-  const dark = mode === 'dark' || (mode === 'system' && systemPrefersDark());
-  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  /* 原生：状态栏/导航栏底色与图标明暗、WebView 底色同步 */
+/* ============ 主题：v1.9.18 起固定浅色 ============ */
+function getThemeMode() { return 'light'; }
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', 'light');
+  /* 原生：状态栏/导航栏图标始终为深色 */
   try {
     const bp = barServicePlugin();
-    if (bp && bp.setTheme) bp.setTheme({ dark: dark }).catch(() => {});
+    if (bp && bp.setTheme) bp.setTheme({ dark: false }).catch(() => {});
   } catch (e) {}
   /* 同步常驻栏卡片配色 */
   try { if (typeof refreshTodayBar === 'function') refreshTodayBar(); } catch (e) {}
-  updateThemeUI(mode);
 }
-function updateThemeUI(mode) {
-  const seg = document.getElementById('themeSeg');
-  if (seg) seg.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-  const val = document.getElementById('appearanceVal');
-  if (val) val.textContent = { light: '浅色', dark: '深色', system: '跟随系统' }[mode] || '跟随系统';
-}
-function setThemeMode(mode) {
-  if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
-  store.set(THEME_KEY, mode);
-  applyTheme(mode);
-}
-(function bindThemeSeg() {
-  const seg = document.getElementById('themeSeg');
-  if (seg) {
-    seg.querySelectorAll('.seg-btn').forEach((b) => {
-      b.addEventListener('click', () => setThemeMode(b.dataset.mode));
-    });
-  }
-  /* 系统主题变化：跟随系统时实时切换 */
-  try {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    if (mq && mq.addEventListener) mq.addEventListener('change', () => { if (getThemeMode() === 'system') applyTheme('system'); });
-    else if (mq && mq.addListener) mq.addListener(() => { if (getThemeMode() === 'system') applyTheme('system'); });
-  } catch (e) {}
-})();
 
 /* 通知插件延迟加载：优先用正式打包的插件（window.__cap），兼容桥接层 registerPlugin */
 var _lnPlugin = null;
@@ -2108,7 +2074,7 @@ try {
 
 /* ============ 启动 ============ */
 (async function init() {
-  applyTheme(getThemeMode());
+  applyTheme();
   syncSafeAreas();
   purgeOldSources(); /* v1.8.8：完成满 1 天的日程，原始来源自动清理 */
   loadSettingsUI();

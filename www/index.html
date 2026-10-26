@@ -4,15 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>日程助手</title>
-  <!-- v1.8.0：首屏前应用主题，避免深色模式闪白 -->
+  <!-- v1.9.18：固定浅色主题 -->
   <script>
     (function () {
-      try {
-        var raw = localStorage.getItem('themeMode');
-        var m = raw ? JSON.parse(raw) : 'system';
-        var dark = m === 'dark' || (m !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-      } catch (e) {}
+      try { document.documentElement.setAttribute('data-theme', 'light'); } catch (e) {}
     })();
   </script>
   <link rel="stylesheet" href="css/style.css">
@@ -132,14 +127,14 @@
     </header>
     <div class="content">
       <div class="set-menu">
-        <button class="set-link" data-sub="appearance" type="button"><span class="set-ico">🎨</span><span class="set-name">外观</span><span class="set-val" id="appearanceVal">跟随系统</span><span class="chev">›</span></button>
+        <button class="set-link" data-sub="appearance" type="button"><span class="set-ico">🎨</span><span class="set-name">外观</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="ai" type="button"><span class="set-ico">✨</span><span class="set-name">AI 配置</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="course" type="button"><span class="set-ico">📚</span><span class="set-name">课表同步</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="notify" type="button"><span class="set-ico">🔔</span><span class="set-name">通知与提醒</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.17</p>
+      <p class="version">日程助手 v1.9.18</p>
     </div>
   </div>
 
@@ -197,14 +192,6 @@
         <h3 id="subTitle">设置</h3>
       </div>
       <div class="sub-pane" data-sub="appearance" hidden>
-        <div class="form-group">
-          <label>主题</label>
-          <div class="seg" id="themeSeg">
-            <button class="seg-btn" data-mode="light" type="button">浅色</button>
-            <button class="seg-btn" data-mode="dark" type="button">深色</button>
-            <button class="seg-btn" data-mode="system" type="button">跟随系统</button>
-          </div>
-        </div>
         <div class="form-group">
           <label>背景图片</label>
           <div class="bg-image-row">
