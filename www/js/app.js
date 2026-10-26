@@ -88,10 +88,23 @@ const store = {
 };
 
 function getSettings() {
-  return Object.assign(
-    { apiKey: '', textModel: 'glm-4-flash', visionModel: 'glm-4v-flash', todayBarEnabled: true },
-    store.get('settings', {})
-  );
+  return Object.assign({ todayBarEnabled: true }, store.get('settings', {}));
+}
+/* v1.9.8：AI 提供方配置。旧版 apiKey/textModel/visionModel 会自动迁移到智谱。 */
+function getAIConfig() {
+  const s = getSettings();
+  return AIProviders.normalizeConfig(s.ai, s);
+}
+function saveAIConfig(cfg) {
+  const s = getSettings();
+  s.ai = cfg;
+  delete s.apiKey;
+  delete s.textModel;
+  delete s.visionModel;
+  store.set('settings', s);
+}
+function activeAI() {
+  return AIProviders.getProvider(getAIConfig());
 }
 function getTodos() { return store.get('todos', []); }
 /* v1.8.8：记录完成时间，用于「完成满 1 天后自动清理原始来源」 */
@@ -257,26 +270,20 @@ $('fileDoc').addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
-/* ============ GLM API 调用 ============ */
-const GLM_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-
-async function callGLM(model, messages) {
-  const settings = getSettings();
-  if (!settings.apiKey) throw new Error('尚未配置 API Key，请先到「设置」页填写');
-  const resp = await fetch(GLM_URL, {
+/* ============ AI 调用（v1.9.8：按当前提供方的协议发请求） ============ */
+async function callAI(messages, opts) {
+  opts = opts || {};
+  const p = activeAI();
+  if (p.requiresKey && !p.apiKey) throw new Error('尚未配置 API Key，请先到「设置 → AI 配置」填写');
+  const req = AIProviders.buildRequest(p, Object.assign({ messages }, opts));
+  const resp = await fetch(req.url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + settings.apiKey
-    },
-    body: JSON.stringify({ model, messages, temperature: 0.3 })
+    headers: req.headers,
+    body: JSON.stringify(req.body)
   });
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const msg = (data && data.error && data.error.message) || `HTTP ${resp.status}`;
-    throw new Error(msg);
-  }
-  return data.choices[0].message.content;
+  if (!resp.ok) throw new Error(AIProviders.errorMessage(data, resp.status));
+  return AIProviders.parseResponse(p, data);
 }
 
 const SYSTEM_PROMPT = `你是一个待办事项与日程提取助手。用户会给你一段文字（可能来自聊天记录、会议纪要、邮件、文件内容或图片识别结果）。
@@ -305,8 +312,9 @@ $('btnParse').onclick = async () => {
   const fileTexts = attachments.filter((a) => a.type === 'text').map((a) => `【文件：${a.name}】\n${a.text}`).join('\n\n');
   if (!text && !hasImage && !fileTexts) { toast('请先输入文字，或添加图片/文件'); return; }
 
-  const settings = getSettings();
-  if (!settings.apiKey) { toast('请先到「设置」页填写 API Key'); return; }
+  const p = activeAI();
+  if (p.requiresKey && !p.apiKey) { toast('请先到「设置 → AI 配置」填写 API Key'); return; }
+  if (hasImage && !p.visionModel) { toast('未配置图片理解模型，请在「设置 → AI 配置」填写，或去掉图片'); return; }
 
   const btn = $('btnParse');
   btn.disabled = true;
@@ -329,18 +337,18 @@ $('btnParse').onclick = async () => {
         '以上是图片内容，请识别图片中的文字信息（如会议白板、聊天截图、通知单等），结合用户输入提取待办和日程。'
       );
       content.push({ type: 'text', text: userText });
-      raw = await callGLM(settings.visionModel, [
+      raw = (await callAI([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content }
-      ]);
+      ], { model: p.visionModel, vision: true })).content;
     } else {
       const userText = buildUserContent(
         (text ? text : '') + (fileTexts ? '\n\n' + fileTexts : '')
       );
-      raw = await callGLM(settings.textModel, [
+      raw = (await callAI([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userText }
-      ]);
+      ], { model: p.textModel })).content;
     }
 
     const parsed = parseModelJson(raw);
@@ -926,22 +934,113 @@ $('btnClearDone').onclick = async () => {
 })();
 
 /* ============ 设置 ============ */
+let aiEditingId = null;
+
+function fillDatalist(id, values) {
+  const el = $(id);
+  if (!el) return;
+  el.innerHTML = '';
+  (values || []).forEach((v) => {
+    const o = document.createElement('option');
+    o.value = v;
+    el.appendChild(o);
+  });
+}
+
+function fillAIForm(cfg, id) {
+  const p = AIProviders.getProvider(cfg, id);
+  aiEditingId = id;
+  $('setAiProvider').value = id;
+  $('setAiProtocol').value = p.protocol;
+  $('setAiBaseUrl').value = p.baseUrl || '';
+  $('setApiKey').value = p.apiKey || '';
+  $('setTextModel').value = p.textModel || '';
+  $('setVisionModel').value = p.visionModel || '';
+  $('setAiHeaders').value = p.headers && Object.keys(p.headers).length ? JSON.stringify(p.headers, null, 2) : '';
+  fillDatalist('aiTextModels', p.textModels);
+  fillDatalist('aiVisionModels', p.visionModels);
+  $('aiProviderHint').textContent = p.hint || '';
+  $('aiKeyReq').style.display = p.requiresKey ? '' : 'none';
+}
+
+function readAIForm(cfg, id) {
+  const headersText = $('setAiHeaders').value.trim();
+  let headers = {};
+  if (headersText) {
+    let parsed;
+    try { parsed = JSON.parse(headersText); } catch (e) { throw new Error('额外请求头不是合法 JSON'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('额外请求头必须是 JSON 对象');
+    Object.keys(parsed).forEach((k) => { headers[k] = String(parsed[k]); });
+  }
+  const provider = AIProviders.getProvider(cfg, id);
+  return {
+    protocol: $('setAiProtocol').value === 'anthropic' ? 'anthropic' : 'openai',
+    baseUrl: $('setAiBaseUrl').value.trim(),
+    apiKey: $('setApiKey').value.trim(),
+    textModel: $('setTextModel').value.trim(),
+    visionModel: $('setVisionModel').value.trim(),
+    headers,
+    _requiresKey: provider.requiresKey
+  };
+}
+
+function saveAIFromForm() {
+  const cfg = getAIConfig();
+  const id = aiEditingId || cfg.active;
+  const p = readAIForm(cfg, id);
+  if (!p.baseUrl) throw new Error('请填写接口地址（Base URL）');
+  if (!p.textModel) throw new Error('请填写文本模型');
+  delete p._requiresKey;
+  cfg.providers[id] = p;
+  cfg.active = id;
+  saveAIConfig(cfg);
+  aiEditingId = id;
+  return cfg;
+}
+
 function loadSettingsUI() {
   const s = getSettings();
-  $('setApiKey').value = s.apiKey;
-  $('setTextModel').value = s.textModel;
-  $('setVisionModel').value = s.visionModel;
+  const cfg = getAIConfig();
+  const sel = $('setAiProvider');
+  if (sel && !sel.options.length) {
+    AIProviders.providerList().forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      sel.appendChild(o);
+    });
+  }
+  fillAIForm(cfg, cfg.active);
   $('setTodayBar').checked = s.todayBarEnabled !== false;
 }
 
+$('setAiProvider').addEventListener('change', () => {
+  try {
+    const cfg = getAIConfig();
+    const prev = aiEditingId || cfg.active;
+    const p = readAIForm(cfg, prev);
+    delete p._requiresKey;
+    cfg.providers[prev] = p;
+    const next = $('setAiProvider').value;
+    cfg.active = next;
+    saveAIConfig(cfg);
+    fillAIForm(cfg, next);
+  } catch (e) {
+    toast(e.message);
+    $('setAiProvider').value = aiEditingId || getAIConfig().active;
+  }
+});
+
 $('btnSaveSettings').onclick = () => {
-  store.set('settings', {
-    apiKey: $('setApiKey').value.trim(),
-    textModel: $('setTextModel').value,
-    visionModel: $('setVisionModel').value,
-    todayBarEnabled: $('setTodayBar').checked
-  });
-  toast('设置已保存');
+  try {
+    saveAIFromForm();
+    const s = getSettings();
+    s.todayBarEnabled = $('setTodayBar').checked;
+    store.set('settings', s);
+    toast('设置已保存');
+  } catch (e) {
+    toast(e.message);
+  }
 };
 
 $('setTodayBar').addEventListener('change', (e) => {
@@ -1084,20 +1183,27 @@ document.querySelectorAll('.set-link').forEach((b) => {
 $('settingsSub').addEventListener('click', (e) => { if (e.target === $('settingsSub')) closeSettingsSub(); });
 
 $('btnTestApi').onclick = async () => {
-  const key = $('setApiKey').value.trim();
   const status = $('settingsStatus');
-  if (!key) { status.className = 'status error'; status.textContent = '请先填写 API Key'; return; }
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>正在测试…';
   try {
-    store.set('settings', Object.assign(getSettings(), {
-      apiKey: key, textModel: $('setTextModel').value, visionModel: $('setVisionModel').value
-    }));
-    const out = await callGLM($('setTextModel').value, [
-      { role: 'user', content: '请回复"连接成功"四个字' }
-    ]);
+    const cfg = getAIConfig();
+    const id = aiEditingId || cfg.active;
+    const p = readAIForm(cfg, id);
+    if (p._requiresKey && !p.apiKey) throw new Error('请先填写 API Key');
+    if (!p.baseUrl) throw new Error('请先填写接口地址（Base URL）');
+    if (!p.textModel) throw new Error('请先填写文本模型');
+    const req = AIProviders.buildRequest(p, {
+      messages: [{ role: 'user', content: '请回复"连接成功"四个字' }]
+    });
+    const resp = await fetch(req.url, {
+      method: 'POST', headers: req.headers, body: JSON.stringify(req.body)
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(AIProviders.errorMessage(data, resp.status));
+    const out = AIProviders.parseResponse(p, data).content || '';
     status.className = 'status ok';
-    status.textContent = '✔ 连接成功：' + out.slice(0, 50);
+    status.textContent = '✔ 连接成功：' + out.slice(0, 80);
   } catch (err) {
     status.className = 'status error';
     status.textContent = '✘ 连接失败：' + err.message;
@@ -1327,10 +1433,12 @@ const CHAT_ACTIONS = {
   },
   async get_settings_info() {
     const s = getSettings();
+    const p = activeAI();
     return JSON.stringify({
       ok: true,
-      textModel: s.textModel, visionModel: s.visionModel,
-      hasApiKey: !!s.apiKey, todayBarEnabled: s.todayBarEnabled !== false,
+      provider: p.name, protocol: p.protocol, baseUrl: p.baseUrl,
+      textModel: p.textModel, visionModel: p.visionModel,
+      hasApiKey: !!p.apiKey, todayBarEnabled: s.todayBarEnabled !== false,
       note: '出于安全，API Key 不返回'
     });
   },
@@ -1442,24 +1550,6 @@ function chatSystemPrompt() {
 6. 回复用简洁中文，执行完工具后用一句话向用户确认结果；课表类问题可用列表或简单表格回答。`;
 }
 
-async function callGLMRaw(model, messages, useTools) {
-  const settings = getSettings();
-  if (!settings.apiKey) throw new Error('尚未配置 API Key，请先到「设置」页填写');
-  const body = { model, messages, temperature: 0.3 };
-  if (useTools) { body.tools = CHAT_TOOLS; body.tool_choice = 'auto'; }
-  const resp = await fetch(GLM_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.apiKey },
-    body: JSON.stringify(body)
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const msg = (data && data.error && data.error.message) || `HTTP ${resp.status}`;
-    throw new Error(msg);
-  }
-  return data;
-}
-
 function renderChat() {
   const box = $('chatList');
   if (!box) return;
@@ -1507,8 +1597,8 @@ async function chatSend() {
   const input = $('chatInput');
   const text = input.value.trim();
   if (!text || chatBusy) return;
-  const s = getSettings();
-  if (!s.apiKey) { toast('请先到「设置」页填写 API Key'); showPage('page-settings'); return; }
+  const p = activeAI();
+  if (p.requiresKey && !p.apiKey) { toast('请先到「设置 → AI 配置」填写 API Key'); showPage('page-settings'); return; }
   input.value = '';
   const h0 = chatHistory();
   h0.push({ role: 'user', content: text });
@@ -1519,8 +1609,10 @@ async function chatSend() {
   try {
     for (let round = 0; round < 6; round++) {
       const msgs = [{ role: 'system', content: chatSystemPrompt() }, ...sanitizeChatHistory(chatHistory())];
-      const resp = await callGLMRaw(s.textModel, msgs, true);
-      const msg = resp.choices[0].message;
+      const r = await callAI(msgs, { model: p.textModel, tools: CHAT_TOOLS });
+      const msg = { role: 'assistant', content: r.content || '' };
+      if (r.toolCalls && r.toolCalls.length) msg.tool_calls = r.toolCalls;
+      if (!msg.content && !msg.tool_calls) msg.content = '（模型没有返回内容）';
       const h = chatHistory();
       h.push(msg);
       setChatHistory(h);
@@ -1779,7 +1871,8 @@ $('dDelete').onclick = async () => {
       if (window.CourseSync && window.CourseSync.getList().length) window.CourseSync.scheduleCourseNotifications();
     } catch (e) {}
   }, 60000);
-  if (!getSettings().apiKey) {
-    setTimeout(() => toast('首次使用：请到「设置」页填写智谱 API Key', 3500), 600);
+  const firstAI = activeAI();
+  if (firstAI.requiresKey && !firstAI.apiKey) {
+    setTimeout(() => toast('首次使用：请到「设置 → AI 配置」选择提供方并填写 API Key', 3500), 600);
   }
 })();

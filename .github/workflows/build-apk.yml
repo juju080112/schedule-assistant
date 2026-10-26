@@ -58,6 +58,9 @@ jobs:
       - name: Course logic test
         run: node tools/course-logic-test.js
 
+      - name: AI provider test
+        run: node tools/ai-provider-test.js
+
       # 把 www/ 同步进原生工程（生成 capacitor-cordova-android-plugins 与 assets/public）
       - name: Capacitor sync
         run: npx cap sync android

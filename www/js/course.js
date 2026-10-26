@@ -47,7 +47,7 @@
   /* 课程提醒的 ID 区间（2e9 以上为课程专用）由原生 CourseAutoSync 分配，
    * 待办用 id(0~1e9) 与 id+1e9(1e9~2e9)，常驻栏用 999998/999999，互不冲突。 */
 
-  /* 课程日程（todos）窗口：当天 + 往后 3 天；提醒计划另见 NATIVE_PLAN_DAYS */
+  /* 课程提醒窗口：当天 + 往后 3 天（每日自动同步会滚动续排） */
   var NOTIFY_HORIZON_DAYS = 4;
   /* v1.9.7：推给原生的排程计划天数。原生不再自己算校历，只按这里给出的绝对时间排闹钟；
      覆盖 14 天，即使几天不打开 App，已排的提醒仍然有效。 */
@@ -1225,7 +1225,7 @@
   function exportDiagnostics() {
     var p = coursePlugin();
     if (!p || !p.dumpDiagnostics) { toast('当前环境不支持导出诊断（需在 App 内运行）'); return; }
-    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.7' };
+    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.8' };
     try { payload.term = getTerm(); } catch (e) {}
     try { payload.courses = getList(); } catch (e) {}
     try { payload.syncedAt = getSyncAt() ? new Date(getSyncAt()).toISOString() : null; } catch (e) {}

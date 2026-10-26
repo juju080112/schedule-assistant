@@ -84,52 +84,60 @@
 
 ## AI 配置
 
-本项目使用 **智谱 AI（Zhipu / 智谱开放平台，bigmodel.cn）** 的开放接口，接口地址写在 `www/js/app.js`：
+v1.9.8 起不再绑定智谱，支持**多提供方 + 自定义**。协议支持：
 
-```js
-const GLM_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-```
+- **OpenAI Chat Completions**：兼容绝大多数服务（OpenAI、智谱、DeepSeek、Kimi、Qwen、Gemini 兼容端点、SiliconFlow、OpenRouter、Ollama、LM Studio、自定义）
+- **Anthropic Messages**：Claude 原生协议
 
-请求采用 OpenAI 兼容格式，`temperature = 0.3`。可选模型在 `www/index.html` 的下拉框里：
+### 内置提供方
 
-| 用途 | 模型 | 说明 |
-|---|---|---|
-| **文本**（解析文字/文件、AI 助手多轮对话与工具调用） | `glm-4-flash` | **默认，免费**，日常解析足够 |
-| | `glm-4-air` | 更快更强，付费 |
-| | `glm-4-plus` | 旗舰，付费 |
-| **图片理解**（截图、白板、通知单） | `glm-4v-flash` | **默认，免费** |
-| | `glm-4v-plus` | 旗舰，付费 |
+| 提供方 | Base URL | 文本模型示例 | 图片模型示例 |
+|---|---|---|---|
+| 智谱 BigModel | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` / `glm-4-air` / `glm-4-plus` | `glm-4v-flash` / `glm-4v-plus` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` / `gpt-4o` / `gpt-4.1-mini` / `o4-mini` | `gpt-4o-mini` / `gpt-4o` |
+| Anthropic Claude | `https://api.anthropic.com/v1`（Anthropic 协议） | `claude-sonnet-4-5` / `claude-haiku-4-5` / `claude-opus-4-1` | 同左 |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` / `gemini-2.5-pro` | 同左 |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` / `deepseek-reasoner` | 无 |
+| Moonshot Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` / `kimi-latest` | `moonshot-v1-8k-vision-preview` |
+| 阿里云百炼 Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` / `qwen-max` | `qwen-vl-plus` / `qwen-vl-max` |
+| 火山方舟 Doubao | `https://ark.cn-beijing.volces.com/api/v3` | 模型名或推理接入点 ID | 按账号可用模型填写 |
+| 硅基流动 SiliconFlow | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3` 等 | `Qwen/Qwen2-VL-72B-Instruct` 等 |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini`、`anthropic/claude-sonnet-4.5` 等 | 按 OpenRouter 模型列表 |
+| Ollama（本地） | 模拟器 `http://10.0.2.2:11434/v1`；真机填电脑局域网 IP | `llama3.2` / `qwen2.5` | `llava` |
+| LM Studio（本地） | 模拟器 `http://10.0.2.2:1234/v1` | `local-model` | 按加载的模型 |
+| 自定义 | 任意 OpenAI 兼容 / Anthropic Base URL | 任意模型 ID | 任意模型 ID |
 
-默认值：`textModel = glm-4-flash`、`visionModel = glm-4v-flash`（两者都有免费额度）。
+> 预设只是常用建议；模型名可以直接键入。不同账号、不同地区的可用模型可能不同，以服务商控制台为准。
 
 ### 怎么配置
 
-1. 打开 [open.bigmodel.cn](https://open.bigmodel.cn) → 注册 → 控制台 → **API Keys** → 新建一个 Key（新用户有免费额度）
-2. App 内进入 **设置 → AI 配置**
-3. 填入 **API Key**，选择文本模型与图片理解模型，点 **保存设置**
-4. 可点 **测试 API 连通性** 验证（会发一条「请回复连接成功」）
+1. **设置 → AI 配置 → 模型提供方**，选一个预设或「自定义」
+2. 填 **API Key**（本地服务可留空）
+3. 填 **接口地址 Base URL**：一般到 `/v1` 或 `/v1beta` 一级；也可以直接粘贴完整的 `.../chat/completions` 或 `.../messages`
+4. 填 **文本模型**（必填）和 **图片理解模型**（可留空，留空则只能解析文字）
+5. 需要时展开 **高级：额外请求头**，填 JSON（OpenRouter 统计头、Azure 的 `api-key` 等）
+6. 点 **保存设置**；点 **测试 API 连通性** 会发一条「请回复连接成功」
 
-没有配置 Key 时，解析页与 AI 助手会提示先去设置里填写。
+### 协议与兼容性
 
-### Key 存在哪里、请求怎么走
+- **OpenAI 兼容**：`POST {Base URL}/chat/completions`，`Authorization: Bearer <key>`；支持 `image_url` 图片和 `tools` 工具调用
+- **Anthropic**：`POST {Base URL}/messages`，`x-api-key` + `anthropic-version: 2023-06-01`；system 单独传，图片转 base64，支持 `tool_use` / `tool_result`
+- o 系列 / gpt-5 模型不发送 `temperature`，避免 400
+- **AI 助手**的工具调用需要模型支持 function calling；**图片解析**需要视觉模型
+- 本地 HTTP 仅放行 `localhost` / `127.0.0.1` / `10.0.2.2`（模拟器）；真机访问电脑局域网 IP 需要 HTTPS，或自行修改 `network_security_config.xml`
 
-- **只存在本机**：`localStorage` 的 `settings.apiKey`，与待办数据放在一起，随「清空所有数据」一起删除
-- **直连模型服务商**：请求从你的手机直接发往 `open.bigmodel.cn`，**不经过本项目作者的任何服务器**（本项目没有自建服务器）
-- **费用与配额**：走你自己的智谱账号，免费档模型（`glm-4-flash` / `glm-4v-flash`）日常使用足够
-- **解析用到的内容**：文字内容、图片、文件抽取出的文本会随请求发给智谱；如果你对此有顾虑，可只用课表功能（课表同步不涉及智谱）
+### Key 与隐私
 
-### 想换模型 / 换服务商
-
-- 换取更贵的智谱模型：直接在下拉框里选（或在 `www/index.html` 里增删 `<option>`）
-- 换别的服务商：改 `GLM_URL` 与请求格式即可，代码里只有 `callGLM()` / `callGLMRaw()` 两处发请求；注意图片理解需要该服务商支持 OpenAI 兼容的 `image_url` 格式
-
----
+- **每个提供方的 Key 分开保存在本机** `localStorage` 的 `settings.ai.providers`，切换提供方不会丢；「清空所有数据」会一并删除
+- 请求**直接发往你选择的提供方**，不经过本项目作者的任何服务器（本项目没有自建服务器）
+- 文字、图片、文件抽取出的文本会随请求发给你选择的提供方；如果不想用 AI，可以只用课表与待办功能
+- 旧版智谱配置（`settings.apiKey` / `textModel` / `visionModel`）会在首次打开时自动迁移到「智谱 BigModel」预设
 
 ## 隐私说明
 
 - **没有自建服务器**，不收集、不上传任何遥测；日程、课表、对话历史、API Key 全部只存本机
 - **教务同步为只读接入**：仅请求课表数据，**零写操作**；登录由用户在系统浏览器内核中亲手完成，应用**不读取、不存储**账号、密码、Cookie、Token；登录会话仅保留在本机内核内、仅供自动同步复用，可一键清除
-- **AI 请求**只发往模型服务商（默认智谱），使用用户自己的 Key
+- **AI 请求**只发往你在 AI 配置里选择的提供方，使用你自己的 Key；每个提供方的 Key 分开保存在本机
 - 提供「一键清理已完成」与「清空所有数据」
 
 ## 下载与安装
@@ -167,14 +175,18 @@ cp android/keystore.properties.example android/keystore.properties
 签名密钥**不在仓库**，CI 通过 4 个仓库 Secrets 取回（`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`，2026-09-24 已配置）→ 推送 `v*` 标签时 CI 构建**正式签名**的 APK 并自动附加到 Release。未配置这些 Secrets 时，产物退化为 debug 签名、只上传为 Artifact（Release 仍会创建，只是不附 APK）。
 
 ### 逻辑自检（无需手机）
-仓库自带一个不依赖浏览器与手机的测试台：它在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图渲染与周次区间压缩、自定义时间活动、对账不误关、后台同步结果采纳、14 天原生排程计划、已完成/已移除节次不排提醒、展开幂等、完成状态保持、删除后不复活、空课表健壮性等 62 项）。
+仓库自带不依赖浏览器与手机的测试台：
+
+- `tools/course-logic-test.js`：在 Node 里桩化 DOM/插件后**直接加载真实的 `www/js/course.js`**，断言课表与校历算法（当前周与调课判定、节假日停课、补课日「教务把课挪到自然星期」的回归、单双周、课程时段、展开窗口、「全」视图、自定义时间活动、对账、后台同步结果采纳、14 天原生排程计划、已完成/已移除节次不排提醒、展开幂等等）共 **62 项**。
+- `tools/ai-provider-test.js`：验证模型提供方预设、旧配置迁移、OpenAI / Anthropic 端点与请求头、图片与工具调用转换、响应解析、额外请求头覆盖等 **22 项**。
 
 ```bash
 node tools/course-logic-test.js
+node tools/ai-provider-test.js
 # 可选：APP_NOW=2026-10-12T09:00:00+08:00 指定模拟的「今天」（默认 2026-09-20 校庆调课日）
 ```
 
-该测试台已在 CI（`.github/workflows/build-apk.yml`）里作为独立步骤运行，且跑在 `cap sync` 之前——同步进原生工程的一定是通过自检的代码。
+两个测试都已接入 CI（`.github/workflows/build-apk.yml`），且跑在 `cap sync` 之前——同步进原生工程的一定是通过自检的代码。
 
 ## 项目结构
 
@@ -184,6 +196,7 @@ node tools/course-logic-test.js
 │   ├── css/style.css           # 主题变量（浅色/深色）、布局
 │   └── js/
 │       ├── app.js              # 日程、解析、AI 助手、通知、常驻栏、主题、使用指南
+│       ├── ai-providers.js     # 模型提供方预设、协议适配、工具调用/图片转换
 │       └── course.js           # 课表：同步流程、周课表网格、课程日程对账
 ├── android/                    # Capacitor 原生工程
 │   └── app/src/main/
@@ -198,6 +211,7 @@ node tools/course-logic-test.js
 │       │   ├── CoursePlugin.java          # 课表同步桥
 │       │   ├── SystemPlugin.java          # 权限自检与跳转系统设置
 │       │   └── BarPlugin.java             # 常驻栏 / 主题桥
+│       ├── res/xml/network_security_config.xml  # 仅放行本机/模拟器回环 HTTP
 │       └── assets/
 │           ├── course-ustc.js             # 注入教务页的抓取脚本（官方接口直取）
 │           └── course-extract.js          # 通用 DOM 解析兜底
@@ -290,29 +304,40 @@ Schedule Assistant automates the path from "I saw a notice" to "it reminded me o
 
 ## AI configuration
 
-This project talks to **Zhipu AI (bigmodel.cn)** using its OpenAI-compatible endpoint:
+Since v1.9.8 the app is not tied to Zhipu. It supports **multiple providers + custom endpoints**:
 
-```js
-const GLM_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-```
+- **OpenAI Chat Completions** — works with OpenAI, Zhipu, DeepSeek, Kimi, Qwen, Gemini's OpenAI-compatible endpoint, SiliconFlow, OpenRouter, Ollama, LM Studio and custom services
+- **Anthropic Messages** — native Claude protocol
 
-| Purpose | Model | Note |
-|---|---|---|
-| Text (parsing, assistant + tool calling) | `glm-4-flash` | default, free tier |
-| | `glm-4-air` / `glm-4-plus` | faster/stronger, paid |
-| Vision (screenshots, whiteboards) | `glm-4v-flash` | default, free tier |
-| | `glm-4v-plus` | flagship, paid |
+Built-in presets include Zhipu BigModel, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Moonshot Kimi, Alibaba Qwen, Volcano Doubao, SiliconFlow, OpenRouter, Ollama, LM Studio and **Custom**. Preset model IDs are suggestions only; every model field is free text.
 
-Setup: create an API key at [open.bigmodel.cn](https://open.bigmodel.cn) → in the app go to **Settings → AI config** → paste the key, choose models, save. A **Test connection** button is provided.
+### Setup
 
-- The key is stored **locally only** (`localStorage`) and is deleted by "Clear all data"
-- Requests go **directly from your device to bigmodel.cn**; there is no server operated by this project
-- Usage is billed to your own Zhipu account; the `-flash` models are free of charge
-- Text, images and extracted file text are sent to Zhipu for parsing. If you prefer not to, you can use the timetable features only
+1. **Settings → AI config → Provider**, pick a preset or Custom
+2. Enter the **API key** (local services may leave it empty)
+3. Enter the **Base URL** (usually up to `/v1` or `/v1beta`; a full `.../chat/completions` or `.../messages` also works)
+4. Enter a **text model** (required) and a **vision model** (optional; leave empty for text-only)
+5. Optionally open **Advanced: extra headers** and enter a JSON object (OpenRouter attribution, Azure `api-key`, etc.)
+6. **Save**, then **Test connection** (sends "please reply connected")
+
+### Protocols
+
+- **OpenAI-compatible**: `POST {Base URL}/chat/completions`, `Authorization: Bearer <key>`, supports `image_url` and `tools`
+- **Anthropic**: `POST {Base URL}/messages`, `x-api-key` + `anthropic-version: 2023-06-01`, system prompt is sent separately, images are converted to base64, and `tool_use` / `tool_result` are supported
+- o-series / gpt-5 models do not receive `temperature`
+- The AI assistant needs a model that supports function calling; image parsing needs a vision model
+- Cleartext HTTP is allowed only for `localhost` / `127.0.0.1` / `10.0.2.2` (emulator); a LAN IP from a real phone needs HTTPS or a network-security-config change
+
+### Keys and privacy
+
+- **Each provider's key is stored separately on-device** in `localStorage` (`settings.ai.providers`); switching providers does not lose it, and "Clear all data" removes it
+- Requests go **directly to the provider you select**; there is no server operated by this project
+- Text, images and extracted file text are sent to that provider. If you prefer not to use AI, the timetable and todo features work without it
+- An old Zhipu config (`settings.apiKey` / `textModel` / `visionModel`) is migrated to the Zhipu preset on first launch
 
 ## Privacy
 
-- No backend, no telemetry; todos, timetable, chat history and API key live on-device
+- No backend, no telemetry; todos, timetable, chat history and per-provider API keys live on-device
 - **Course sync is read-only**: GET requests only, zero writes; you log in yourself in the system WebView and the app never reads or stores credentials, cookies or tokens; the session stays in the local WebView and can be cleared with one tap
 - **One-tap cleanup** for completed items, plus "Clear all data"
 
@@ -332,11 +357,17 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`. The repo ships 
 A GitHub Actions workflow ([`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)) builds the APK on every push to `main` and attaches it to a Release when a `v*` tag is pushed (if no signing secrets are configured, the artifact is named `-debug-signed` and is **not** attached to the Release).
 
 ### Logic self-test (no device needed)
-The repo ships a test harness that stubs the DOM/plugins in Node and loads the **real** `www/js/course.js`, asserting 62 cases around the timetable and academic-calendar logic (current week and make-up-class detection, holiday suspension, odd/even weeks, lesson times, custom-time activities, the 14-day native plan, skipping completed/removed sessions, idempotent expansion, completion persistence, no resurrection after deletion, empty-timetable robustness):
+The repo ships two Node test harnesses:
+
+- `tools/course-logic-test.js` stubs the DOM/plugins and loads the **real** `www/js/course.js`, asserting 62 cases around the timetable and academic-calendar logic.
+- `tools/ai-provider-test.js` verifies provider presets, legacy migration, OpenAI / Anthropic endpoints and headers, image and tool-call conversion, response parsing and custom headers (22 cases).
 
 ```bash
 node tools/course-logic-test.js
+node tools/ai-provider-test.js
 ```
+
+Both run in CI before `cap sync`.
 
 ## Adapting to another university
 

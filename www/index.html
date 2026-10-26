@@ -129,7 +129,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.7</p>
+      <p class="version">日程助手 v1.9.8</p>
     </div>
   </div>
 
@@ -185,23 +185,47 @@
       </div>
       <div class="sub-pane" data-sub="ai">
         <div class="form-group">
-          <label>智谱 API Key <span class="req">*必填</span></label>
-          <input type="password" id="setApiKey" placeholder="请填入 open.bigmodel.cn 的 API Key">
+          <label>模型提供方</label>
+          <select id="setAiProvider"></select>
+          <div class="hint" id="aiProviderHint">不同提供方的 Key 分开保存，切换提供方不会丢失。</div>
+        </div>
+        <div class="form-group">
+          <label>协议</label>
+          <select id="setAiProtocol">
+            <option value="openai">OpenAI Chat Completions（兼容多数服务）</option>
+            <option value="anthropic">Anthropic Messages（Claude）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>接口地址 Base URL</label>
+          <input type="text" id="setAiBaseUrl" placeholder="https://api.openai.com/v1" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" inputmode="url">
+          <div class="hint">填到 <code>/v1</code> 或 <code>/v1beta</code> 一级；也可以直接粘贴完整的 <code>.../chat/completions</code> 或 <code>.../messages</code>。</div>
+        </div>
+        <div class="form-group">
+          <label>API Key <span class="req" id="aiKeyReq">*必填</span></label>
+          <input type="password" id="setApiKey" placeholder="只保存在本机；本地服务可留空" autocomplete="off" spellcheck="false">
         </div>
         <div class="form-group">
           <label>文本模型</label>
-          <select id="setTextModel">
-            <option value="glm-4-flash">glm-4-flash（免费，推荐）</option>
-            <option value="glm-4-air">glm-4-air（更快更强，付费）</option>
-            <option value="glm-4-plus">glm-4-plus（旗舰，付费）</option>
-          </select>
+          <input type="text" id="setTextModel" list="aiTextModels" placeholder="例如 gpt-4o-mini / deepseek-chat" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+          <datalist id="aiTextModels"></datalist>
+          <div class="hint">可以直接输入模型 ID；下拉只是常用建议。</div>
         </div>
         <div class="form-group">
-          <label>图片理解模型</label>
-          <select id="setVisionModel">
-            <option value="glm-4v-flash">glm-4v-flash（免费，推荐）</option>
-            <option value="glm-4v-plus">glm-4v-plus（旗舰，付费）</option>
-          </select>
+          <label>图片理解模型（可留空）</label>
+          <input type="text" id="setVisionModel" list="aiVisionModels" placeholder="留空则只用文字解析" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+          <datalist id="aiVisionModels"></datalist>
+        </div>
+        <details class="ai-advanced">
+          <summary>高级：额外请求头（JSON，可选）</summary>
+          <div class="form-group">
+            <textarea id="setAiHeaders" rows="3" placeholder='{"X-Custom":"value"}' autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+            <div class="hint">用于 OpenRouter 统计、Azure 的 <code>api-key</code> 等。API Key 已自动处理；这里同名的头会覆盖默认值。</div>
+          </div>
+        </details>
+        <div class="privacy-note">
+          <b>说明</b>
+          <p>AI 助手（工具调用）需要模型支持 function calling；图片解析需要视觉模型。请求直接发往你选择的提供方，不经过本项目服务器。</p>
         </div>
         <button class="btn-primary" id="btnSaveSettings">保存设置</button>
         <button class="btn-ghost" id="btnTestApi">测试 API 连通性</button>
@@ -338,6 +362,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="lib/plugins.js" defer></script>
+  <script src="js/ai-providers.js" defer></script>
   <script src="js/app.js" defer></script>
   <script src="js/course.js" defer></script>
 </body>
