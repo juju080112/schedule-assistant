@@ -328,7 +328,12 @@ body.sub-open #page-settings, body.sub-open .tabbar { visibility: hidden; }
   padding: calc(var(--status-bar) + 2px) 0 8px;
 }
 .sheet-header h3 { font-size: 18px; font-weight: 700; }
-#settingsSub .sheet-header { justify-content: flex-start; gap: 8px; }
+#settingsSub .sheet-header {
+  justify-content: flex-start; gap: 8px;
+  position: static;
+  background: transparent;
+  padding: calc(var(--status-bar) + 2px) 0 6px;
+}
 .sub-back {
   width: 34px; height: 34px; margin-left: -6px; padding: 0;
   border: none; background: none; color: var(--text);
