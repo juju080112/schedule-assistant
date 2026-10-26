@@ -1873,6 +1873,30 @@ $('srcMask').addEventListener('click', (e) => { if (e.target === $('srcMask')) c
 $('detailClose').onclick = closeDetail;
 $('detailMask').addEventListener('click', (e) => { if (e.target === $('detailMask')) closeDetail(); });
 
+/* v1.9.12：一键复制标题和备注，避免用户用「全选」去选整页 */
+$('dCopy').onclick = () => {
+  const text = [$('dTitle').value.trim(), $('dDetail').value.trim()].filter(Boolean).join('\n');
+  if (!text) { toast('没有可复制的内容'); return; }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove();
+  if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => toast('已复制标题和备注'))
+      .catch(() => toast('复制失败'));
+    return;
+  }
+  toast(ok ? '已复制标题和备注' : '复制失败');
+};
+
 $('dSave').onclick = async () => {
   if (editParsedIndex != null) {
     const t = lastParsed && lastParsed[editParsedIndex];

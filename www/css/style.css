@@ -622,3 +622,16 @@ textarea { resize: none; line-height: 1.6; }
 .result-item .edit-item:active { background: var(--bg-press); color: var(--primary); }
 .result-item .edit-item + .rm-item { margin-left: 6px; }
 .result-item .tag.past { background: var(--danger-bg); color: var(--danger); }
+
+
+/* v1.9.12：只允许内容文本被选中，UI 控件/按钮/标签不可选，避免「全选」把界面文字一起选中 */
+html, body { -webkit-user-select: none; user-select: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+.card-item .title, .card-item .meta,
+.result-item > span,
+.msg,
+.src-text,
+.ct-card {
+  -webkit-user-select: text;
+  user-select: text;
+}
