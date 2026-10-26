@@ -814,6 +814,16 @@ function barServicePlugin() {
   } catch (e) {}
   return null;
 }
+/* v1.9.17：读取真实状态栏高度，子页顶部只留必要留白 */
+function syncSafeAreas() {
+  try {
+    const bp = barServicePlugin();
+    if (!bp || !bp.getMetrics) return;
+    bp.getMetrics().then((m) => {
+      if (m && m.statusBar > 0) document.documentElement.style.setProperty('--status-bar', m.statusBar + 'px');
+    }).catch(() => {});
+  } catch (e) {}
+}
 
 async function updateTodayBar() {
   if (!getSettings().todayBarEnabled) {
@@ -2099,6 +2109,7 @@ try {
 /* ============ 启动 ============ */
 (async function init() {
   applyTheme(getThemeMode());
+  syncSafeAreas();
   purgeOldSources(); /* v1.8.8：完成满 1 天的日程，原始来源自动清理 */
   loadSettingsUI();
   renderSchedule();

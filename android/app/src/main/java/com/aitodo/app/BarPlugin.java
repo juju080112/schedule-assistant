@@ -1,10 +1,14 @@
 package com.aitodo.app;
 
 import android.app.Activity;
+import android.content.res.Resources;
 import android.graphics.Color;
+import android.os.Build;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -13,6 +17,40 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 /** 网页层 ↔ 原生常驻栏服务 / 主题 的桥 */
 @CapacitorPlugin(name = "BarService")
 public class BarPlugin extends Plugin {
+
+    /** 返回状态栏与导航栏高度（dp），让网页按真实状态栏留白 */
+    @PluginMethod
+    public void getMetrics(PluginCall call) {
+        JSObject ret = new JSObject();
+        Activity act = getActivity();
+        if (act == null) {
+            call.resolve(ret);
+            return;
+        }
+        Resources res = getContext().getResources();
+        float density = res.getDisplayMetrics().density;
+        int statusBarPx = 0;
+        int navBarPx = 0;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsets insets = act.getWindow().getDecorView().getRootWindowInsets();
+                if (insets != null) {
+                    android.graphics.Insets bars = insets.getInsets(
+                            WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    statusBarPx = bars.top;
+                    navBarPx = bars.bottom;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (statusBarPx == 0) {
+            int id = res.getIdentifier("status_bar_height", "dimen", "android");
+            if (id > 0) statusBarPx = res.getDimensionPixelSize(id);
+        }
+        ret.put("statusBar", Math.round(statusBarPx / density));
+        ret.put("navigationBar", Math.round(navBarPx / density));
+        call.resolve(ret);
+    }
 
     @PluginMethod
     public void update(PluginCall call) {
