@@ -39,8 +39,9 @@ function applyTheme(mode) {
 }
 function updateThemeUI(mode) {
   const seg = document.getElementById('themeSeg');
-  if (!seg) return;
-  seg.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  if (seg) seg.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  const val = document.getElementById('appearanceVal');
+  if (val) val.textContent = { light: '浅色', dark: '深色', system: '跟随系统' }[mode] || '跟随系统';
 }
 function setThemeMode(mode) {
   if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
@@ -87,85 +88,49 @@ const store = {
   set(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 };
 
-/* ============ v1.9.13 背景工作室 ============ */
+/* ============ v1.9.14 外观：自定义背景 ============ */
 const BG_KEY = 'backgroundSettings';
-let bgConfig = { mode: 'default', color: '#5B8CFF', strength: 60, image: '' };
+let bgConfig = { strength: 60, image: '' };
 
 function getBgConfig() {
-  return Object.assign({ mode: 'default', color: '#5B8CFF', strength: 60, image: '' }, store.get(BG_KEY, {}));
+  const saved = store.get(BG_KEY, {}) || {};
+  return {
+    strength: Math.max(20, Math.min(100, Number(saved.strength) || 60)),
+    image: typeof saved.image === 'string' ? saved.image : ''
+  };
 }
 function saveBgConfig() {
   try { store.set(BG_KEY, bgConfig); return true; }
   catch (e) { toast('背景设置保存失败，图片可能太大'); return false; }
 }
-function shadeHex(hex, f) {
-  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  if (f < 0) { r = Math.round(r * (1 + f)); g = Math.round(g * (1 + f)); b = Math.round(b * (1 + f)); }
-  else { r = Math.round(r + (255 - r) * f); g = Math.round(g + (255 - g) * f); b = Math.round(b + (255 - b) * f); }
-  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
 function applyBackground() {
   const b = document.body;
-  const mode = ['default', 'solid', 'gradient', 'aurora', 'nebula', 'image'].includes(bgConfig.mode) ? bgConfig.mode : 'default';
-  b.dataset.bg = mode;
-  if (mode === 'default') {
+  if (!bgConfig.image) {
+    b.dataset.bg = 'default';
     b.style.removeProperty('--bg-image');
-    b.style.removeProperty('--bg-custom');
-    b.style.removeProperty('--bg-custom-2');
     b.style.removeProperty('--bg-scrim-alpha');
     return;
   }
-  const color = bgConfig.color || '#5B8CFF';
-  const strength = Math.max(20, Math.min(100, Number(bgConfig.strength) || 60));
-  b.style.setProperty('--bg-custom', color);
-  b.style.setProperty('--bg-custom-2', shadeHex(color, -0.3));
-  b.style.setProperty('--bg-scrim-alpha', String((100 - strength) / 100 * 0.85));
-  if (bgConfig.image) b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
-  else b.style.removeProperty('--bg-image');
-  b.classList.toggle('bg-paused', document.hidden);
+  b.dataset.bg = 'image';
+  b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
+  b.style.setProperty('--bg-scrim-alpha', String((100 - bgConfig.strength) / 100 * 0.85));
 }
 function renderBackgroundUI() {
-  const mode = bgConfig.mode || 'default';
-  document.querySelectorAll('.bg-opt').forEach((b) => b.classList.toggle('active', b.dataset.bg === mode));
-  const color = $('bgColor');
-  if (color) color.value = bgConfig.color || '#5B8CFF';
-  const strength = $('bgStrength');
-  if (strength) strength.value = Math.max(20, Math.min(100, Number(bgConfig.strength) || 60));
+  const has = !!bgConfig.image;
   const sv = $('bgStrengthVal');
-  if (sv) sv.textContent = (bgConfig.strength || 60) + '%';
-  const extra = $('bgExtra');
-  if (extra) extra.hidden = mode === 'default';
-  const colorLabel = document.querySelector('.bg-color-label');
-  if (colorLabel) colorLabel.style.display = mode === 'image' ? 'none' : '';
-  const pick = $('bgPickImage');
-  if (pick) pick.hidden = mode !== 'image';
+  if (sv) sv.textContent = bgConfig.strength + '%';
+  const strength = $('bgStrength');
+  if (strength) strength.value = bgConfig.strength;
+  const group = $('bgStrengthGroup');
+  if (group) group.hidden = !has;
   const rem = $('bgRemoveImage');
-  if (rem) rem.hidden = mode !== 'image' || !bgConfig.image;
+  if (rem) rem.hidden = !has;
   const hint = $('bgHint');
   if (hint) {
-    hint.textContent = (mode === 'image' && !bgConfig.image)
-      ? '还没有选择图片；点「选择图片」上传一张。'
-      : '动态背景使用纯 CSS 动画，切到后台自动暂停；自定义图片只存本机。';
+    hint.textContent = has
+      ? '当前使用自定义背景，可重新选择或移除；图片只存本机。'
+      : '选一张本地图片作为背景，自动压缩后只存本机；不选则用默认背景。';
   }
-  const solid = document.querySelector('.bg-thumb-solid');
-  if (solid) solid.style.background = bgConfig.color || '#5B8CFF';
-  const grad = document.querySelector('.bg-thumb-gradient');
-  if (grad) grad.style.background = 'linear-gradient(135deg,' + (bgConfig.color || '#5B8CFF') + ',' + shadeHex(bgConfig.color || '#5B8CFF', -0.3) + ')';
-  const img = document.querySelector('.bg-thumb-image');
-  if (img) {
-    img.style.backgroundImage = bgConfig.image ? 'url("' + bgConfig.image + '")' : '';
-    img.style.backgroundSize = 'cover';
-    img.style.backgroundPosition = 'center';
-  }
-}
-function setBg(patch) {
-  bgConfig = Object.assign(getBgConfig(), bgConfig, patch);
-  if (!saveBgConfig()) return;
-  applyBackground();
-  renderBackgroundUI();
 }
 async function compressBgImage(file) {
   const dataUrl = await new Promise((res, rej) => {
@@ -193,29 +158,6 @@ async function compressBgImage(file) {
     img.src = dataUrl;
   });
 }
-document.querySelectorAll('.bg-opt').forEach((b) => {
-  b.addEventListener('click', () => {
-    const mode = b.dataset.bg;
-    setBg({ mode });
-    if (mode === 'image' && !bgConfig.image) $('bgImageFile').click();
-  });
-});
-$('bgColor').addEventListener('input', () => {
-  bgConfig.color = $('bgColor').value;
-  applyBackground();
-});
-$('bgColor').addEventListener('change', () => {
-  bgConfig.color = $('bgColor').value;
-  saveBgConfig();
-  renderBackgroundUI();
-});
-$('bgStrength').addEventListener('input', () => {
-  bgConfig.strength = +$('bgStrength').value;
-  const sv = $('bgStrengthVal');
-  if (sv) sv.textContent = bgConfig.strength + '%';
-  applyBackground();
-});
-$('bgStrength').addEventListener('change', () => { saveBgConfig(); });
 $('bgPickImage').onclick = () => $('bgImageFile').click();
 $('bgImageFile').onchange = async (e) => {
   const file = e.target.files && e.target.files[0];
@@ -226,7 +168,6 @@ $('bgImageFile').onchange = async (e) => {
     if (dataUrl.length > 2000000) { toast('图片太大，换一张小一点的'); e.target.value = ''; return; }
     bgConfig = getBgConfig();
     bgConfig.image = dataUrl;
-    bgConfig.mode = 'image';
     if (!saveBgConfig()) { e.target.value = ''; return; }
     applyBackground();
     renderBackgroundUI();
@@ -239,16 +180,19 @@ $('bgImageFile').onchange = async (e) => {
 $('bgRemoveImage').onclick = () => {
   bgConfig = getBgConfig();
   bgConfig.image = '';
-  if (bgConfig.mode === 'image') bgConfig.mode = 'default';
   if (saveBgConfig()) {
     applyBackground();
     renderBackgroundUI();
     toast('已移除背景图片');
   }
 };
-document.addEventListener('visibilitychange', () => {
-  document.body.classList.toggle('bg-paused', document.hidden);
+$('bgStrength').addEventListener('input', () => {
+  bgConfig.strength = +$('bgStrength').value;
+  const sv = $('bgStrengthVal');
+  if (sv) sv.textContent = bgConfig.strength + '%';
+  applyBackground();
 });
+$('bgStrength').addEventListener('change', () => { saveBgConfig(); });
 
 function getSettings() {
   return Object.assign({ todayBarEnabled: true }, store.get('settings', {}));
@@ -1412,11 +1356,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* 设置页：主菜单 → 全屏子页（v1.6.0） */
-const SUB_TITLES = { ai: 'AI 配置', course: '课表同步', notify: '通知与提醒', guide: '使用指南', data: '数据管理' };
+const SUB_TITLES = { appearance: '外观', ai: 'AI 配置', course: '课表同步', notify: '通知与提醒', guide: '使用指南', data: '数据管理' };
 function openSettingsSub(key) {
   document.querySelectorAll('.sub-pane').forEach((p) => { p.hidden = p.dataset.sub !== key; });
   $('subTitle').textContent = SUB_TITLES[key] || '设置';
   $('settingsSub').hidden = false;
+  if (key === 'appearance') renderBackgroundUI();
   // v1.7.0：打开课表子页时刷新其状态与预览
   if (key === 'course' && window.CourseSync) {
     try { window.CourseSync.loadSettingsUI(); } catch (e) {}
@@ -1432,6 +1377,7 @@ document.querySelectorAll('.set-link').forEach((b) => {
 });
 /* v1.7.9：子页不再提供右上角关闭按钮，点弹层空白处或系统返回键退出 */
 $('settingsSub').addEventListener('click', (e) => { if (e.target === $('settingsSub')) closeSettingsSub(); });
+$('subBack').onclick = closeSettingsSub;
 
 $('btnTestApi').onclick = async () => {
   const status = $('settingsStatus');

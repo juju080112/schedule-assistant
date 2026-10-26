@@ -131,45 +131,15 @@
       <h1>设置</h1>
     </header>
     <div class="content">
-      <div class="form-group">
-        <label>外观</label>
-        <div class="seg" id="themeSeg">
-          <button class="seg-btn" data-mode="light" type="button">浅色</button>
-          <button class="seg-btn" data-mode="dark" type="button">深色</button>
-          <button class="seg-btn" data-mode="system" type="button">跟随系统</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>背景</label>
-        <div class="bg-grid" id="bgGrid">
-          <button class="bg-opt active" data-bg="default" type="button"><span class="bg-thumb bg-thumb-default"></span>默认</button>
-          <button class="bg-opt" data-bg="solid" type="button"><span class="bg-thumb bg-thumb-solid"></span>纯色</button>
-          <button class="bg-opt" data-bg="gradient" type="button"><span class="bg-thumb bg-thumb-gradient"></span>渐变</button>
-          <button class="bg-opt" data-bg="aurora" type="button"><span class="bg-thumb bg-thumb-aurora"></span>动态极光</button>
-          <button class="bg-opt" data-bg="nebula" type="button"><span class="bg-thumb bg-thumb-nebula"></span>动态星云</button>
-          <button class="bg-opt" data-bg="image" type="button"><span class="bg-thumb bg-thumb-image"></span>自定义图片</button>
-        </div>
-        <div class="bg-extra" id="bgExtra" hidden>
-          <div class="bg-tune-row">
-            <label class="bg-color-label">颜色 <input type="color" id="bgColor" value="#5B8CFF"></label>
-            <label class="bg-strength-label">背景强度 <input type="range" id="bgStrength" min="20" max="100" step="5" value="60"><span id="bgStrengthVal">60%</span></label>
-          </div>
-          <div class="bg-image-row">
-            <button class="btn-ghost" id="bgPickImage" type="button">选择图片</button>
-            <button class="btn-ghost" id="bgRemoveImage" type="button">移除图片</button>
-          </div>
-        </div>
-        <input type="file" id="bgImageFile" accept="image/*" hidden>
-        <div class="hint" id="bgHint">动态背景使用纯 CSS 动画，切到后台自动暂停；自定义图片只存本机。</div>
-      </div>
       <div class="set-menu">
+        <button class="set-link" data-sub="appearance" type="button"><span class="set-ico">🎨</span><span class="set-name">外观</span><span class="set-val" id="appearanceVal">跟随系统</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="ai" type="button"><span class="set-ico">✨</span><span class="set-name">AI 配置</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="course" type="button"><span class="set-ico">📚</span><span class="set-name">课表同步</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="notify" type="button"><span class="set-ico">🔔</span><span class="set-name">通知与提醒</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.13</p>
+      <p class="version">日程助手 v1.9.14</p>
     </div>
   </div>
 
@@ -223,7 +193,35 @@
   <div id="settingsSub" class="mask" hidden>
     <div class="sheet">
       <div class="sheet-header">
+        <button class="sub-back" id="subBack" type="button" aria-label="返回">‹</button>
         <h3 id="subTitle">设置</h3>
+      </div>
+      <div class="sub-pane" data-sub="appearance" hidden>
+        <div class="form-group">
+          <label>主题</label>
+          <div class="seg" id="themeSeg">
+            <button class="seg-btn" data-mode="light" type="button">浅色</button>
+            <button class="seg-btn" data-mode="dark" type="button">深色</button>
+            <button class="seg-btn" data-mode="system" type="button">跟随系统</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>背景图片</label>
+          <div class="bg-image-row">
+            <button class="btn-ghost" id="bgPickImage" type="button">选择图片</button>
+            <button class="btn-ghost" id="bgRemoveImage" type="button" hidden>移除图片</button>
+          </div>
+          <input type="file" id="bgImageFile" accept="image/*" hidden>
+          <div class="hint" id="bgHint">选一张本地图片作为背景，自动压缩后只存本机；不选则用默认背景。</div>
+        </div>
+        <div class="form-group" id="bgStrengthGroup" hidden>
+          <label>背景强度</label>
+          <div class="bg-strength-row">
+            <input type="range" id="bgStrength" min="20" max="100" step="5" value="60">
+            <span id="bgStrengthVal">60%</span>
+          </div>
+          <div class="hint">数值越高背景越清晰，越低越柔和、文字越易读。</div>
+        </div>
       </div>
       <div class="sub-pane" data-sub="ai">
         <div class="form-group">
