@@ -81,7 +81,6 @@ async function applyBackground() {
     b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
     if (wrap) wrap.hidden = true;
     if (v) v.pause();
-    syncGlassSnap();
     return;
   }
   if (bgConfig.video) {
@@ -91,7 +90,6 @@ async function applyBackground() {
       b.style.removeProperty('--bg-image');
       if (wrap) wrap.hidden = false;
       if (v) { applyVideoCrop(); v.play().catch(() => {}); }
-      syncGlassSnap();
       return;
     }
     bgConfig.video = '';
@@ -101,7 +99,6 @@ async function applyBackground() {
   b.style.removeProperty('--bg-image');
   if (wrap) wrap.hidden = true;
   if (v) v.pause();
-  syncGlassSnap();
 }
 function renderBackgroundUI() {
   const hasImg = !!bgConfig.image;
@@ -498,16 +495,9 @@ $('bgRemoveVideo').onclick = async () => {
 };
 document.addEventListener('visibilitychange', () => {
   const v = $('bgVideo');
-  const copies = document.querySelectorAll('.glass-snap-bg video');
-  if (document.hidden) {
-    if (v) v.pause();
-    copies.forEach((c) => c.pause());
-    return;
-  }
-  if (document.body.dataset.bg === 'video') {
-    if (v) v.play().catch(() => {});
-    copies.forEach((c) => c.play().catch(() => {}));
-  }
+  if (!v) return;
+  if (document.hidden) { v.pause(); return; }
+  if (document.body.dataset.bg === 'video') v.play().catch(() => {});
 });
 
 $('bgStrength').addEventListener('input', () => {
@@ -536,194 +526,7 @@ function applyVideoCrop() {
 }
 window.addEventListener('resize', () => {
   if (document.body.dataset.bg === 'video') applyVideoCrop();
-  syncGlassSnap();
 });
-/* 视频背景时让玻璃副本与主视频时间对齐，避免条纹相位错位 */
-setInterval(() => {
-  if (document.body.dataset.bg !== 'video') return;
-  const main = $('bgVideo');
-  if (!main || !main.src) return;
-  document.querySelectorAll('.glass-snap-bg video').forEach((v) => {
-    if (!v.src) return;
-    if (Math.abs(v.currentTime - main.currentTime) > 0.4) {
-      try { v.currentTime = main.currentTime; } catch (e) {}
-    }
-  });
-}, 900);
-
-/* ---- 液态玻璃折射：SVG 位移滤镜 + 背景快照层（v1.9.24） ----
-   参考 rdev/liquid-glass-react 的 feDisplacementMap 方案，改为无框架实现。
-   WebView 不支持 backdrop-filter: url()，所以用「背景快照层 + filter」取得真实折射。 */
-const LG_NS = 'http://www.w3.org/2000/svg';
-let lgReady = false;
-let lgFeHeader = null;
-let lgFeTab = null;
-
-function lgBuildFilter(id, scale) {
-  const filter = document.createElementNS(LG_NS, 'filter');
-  filter.id = id;
-  filter.setAttribute('x', '0');
-  filter.setAttribute('y', '0');
-  filter.setAttribute('width', '100%');
-  filter.setAttribute('height', '100%');
-  filter.setAttribute('color-interpolation-filters', 'sRGB');
-  const feImg = document.createElementNS(LG_NS, 'feImage');
-  feImg.setAttribute('result', 'map');
-  feImg.setAttribute('preserveAspectRatio', 'none');
-  const feDisp = document.createElementNS(LG_NS, 'feDisplacementMap');
-  feDisp.setAttribute('in', 'SourceGraphic');
-  feDisp.setAttribute('in2', 'map');
-  feDisp.setAttribute('scale', String(scale));
-  feDisp.setAttribute('xChannelSelector', 'R');
-  feDisp.setAttribute('yChannelSelector', 'G');
-  filter.append(feImg, feDisp);
-  return { filter: filter, feImg: feImg };
-}
-
-function lgRoundedDist(x, y, w, h, r) {
-  const cx = w / 2, cy = h / 2;
-  const qx = Math.abs(x - cx) - (w / 2 - r);
-  const qy = Math.abs(y - cy) - (h / 2 - r);
-  const ox = Math.max(qx, 0), oy = Math.max(qy, 0);
-  return -(Math.hypot(ox, oy) + Math.min(Math.max(qx, qy), 0) - r);
-}
-
-function lgMakeMap(w, h, radius) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(w, h);
-  const d = img.data;
-  const band = Math.max(10, Math.min(w, h) * 0.38);
-  const cx = w / 2, cy = h / 2;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const px = x + 0.5, py = y + 0.5;
-      const dist = lgRoundedDist(px, py, w, h, radius);
-      let t = 0;
-      if (dist > 0) {
-        t = Math.max(0, 1 - dist / band);
-        t = t * t * (3 - 2 * t);
-      }
-      let nx = 0, ny = 0;
-      if (t > 0) {
-        const qx = Math.abs(px - cx) - (w / 2 - radius);
-        const qy = Math.abs(py - cy) - (h / 2 - radius);
-        if (qx > 0 && qy > 0) {
-          const len = Math.hypot(px - cx, py - cy) || 1;
-          nx = -(px - cx) / len;
-          ny = -(py - cy) / len;
-        } else if (Math.abs(qx) > Math.abs(qy)) {
-          nx = (px - cx) > 0 ? -1 : 1;
-        } else {
-          ny = (py - cy) > 0 ? -1 : 1;
-        }
-      }
-      const i = (y * w + x) * 4;
-      d[i] = 128 + nx * t * 127;
-      d[i + 1] = 128 + ny * t * 127;
-      d[i + 2] = 128;
-      d[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return c.toDataURL('image/png');
-}
-
-function initLiquidGlass() {
-  if (lgReady) return;
-  try {
-    if (!window.CSS || !CSS.supports || !CSS.supports('filter', 'url(#x)')) return;
-    const svg = document.createElementNS(LG_NS, 'svg');
-    svg.setAttribute('width', '0');
-    svg.setAttribute('height', '0');
-    svg.style.position = 'absolute';
-    svg.style.pointerEvents = 'none';
-    svg.setAttribute('aria-hidden', 'true');
-    const defs = document.createElementNS(LG_NS, 'defs');
-    const a = lgBuildFilter('lgHeader', 30);
-    const b = lgBuildFilter('lgTab', 38);
-    defs.append(a.filter, b.filter);
-    svg.append(defs);
-    document.body.append(svg);
-    lgFeHeader = a.feImg;
-    lgFeTab = b.feImg;
-    document.body.classList.add('lg-on');
-    document.querySelectorAll('.header, .tabbar').forEach((el) => {
-      if (el.querySelector(':scope > .glass-snap')) return;
-      const snap = document.createElement('div');
-      snap.className = 'glass-snap';
-      const bg = document.createElement('div');
-      bg.className = 'glass-snap-bg';
-      snap.append(bg);
-      el.prepend(snap);
-    });
-    lgReady = true;
-    syncGlassSnap();
-  } catch (e) {}
-}
-
-function lgSetSnap(el, feImg, filterId, radius) {
-  if (!el) return;
-  const snap = el.querySelector(':scope > .glass-snap');
-  if (!snap) return;
-  const mode = document.body.dataset.bg;
-  const usable = mode === 'image' || mode === 'default' || mode === 'video';
-  snap.style.display = usable ? 'block' : 'none';
-  if (!usable) return;
-  const r = el.getBoundingClientRect();
-  if (r.width < 2 || r.height < 2) return;
-  snap.style.left = r.left + 'px';
-  snap.style.top = r.top + 'px';
-  snap.style.width = r.width + 'px';
-  snap.style.height = r.height + 'px';
-  snap.style.borderRadius = radius + 'px';
-  const key = Math.round(r.width) + 'x' + Math.round(r.height);
-  if (feImg.dataset.map !== key) {
-    feImg.setAttribute('href', lgMakeMap(Math.round(r.width), Math.round(r.height), radius));
-    feImg.dataset.map = key;
-  }
-  const bg = snap.firstElementChild;
-  const cs = getComputedStyle(document.body);
-  if (mode === 'video') {
-    bg.style.backgroundImage = 'none';
-    bg.style.backgroundColor = 'transparent';
-    const main = $('bgVideo');
-    let v = bg.querySelector('video');
-    if (!v) {
-      v = document.createElement('video');
-      v.muted = true;
-      v.loop = true;
-      v.playsInline = true;
-      v.setAttribute('muted', '');
-      v.setAttribute('playsinline', '');
-      bg.append(v);
-    }
-    if (main && main.src && v.src !== main.src) v.src = main.src;
-    v.style.cssText = 'position:absolute;left:' + (-r.left) + 'px;top:' + (-r.top) +
-      'px;width:' + window.innerWidth + 'px;height:' + window.innerHeight +
-      'px;object-fit:cover;';
-    v.play().catch(() => {});
-  } else {
-    const v = bg.querySelector('video');
-    if (v) { v.pause(); v.removeAttribute('src'); v.remove(); }
-    bg.style.backgroundImage = cs.backgroundImage;
-    bg.style.backgroundColor = cs.backgroundColor;
-  }
-  bg.style.setProperty('--snap-tint', filterId === 'lgHeader' ? '.34' : '.38');
-  bg.style.filter = 'url(#' + filterId + ')';
-}
-
-function syncGlassSnap() {
-  if (!lgReady) return;
-  const bgMode = document.body.dataset.bg;
-  const usable = bgMode === 'image' || bgMode === 'default' || bgMode === 'video';
-  document.body.classList.toggle('lg-on', usable);
-  const header = document.querySelector('.page.active .header');
-  const tab = document.querySelector('.tabbar');
-  lgSetSnap(header, lgFeHeader, 'lgHeader', 0);
-  lgSetSnap(tab, lgFeTab, 'lgTab', 31);
-}
 
 function getSettings() {
   return Object.assign({ todayBarEnabled: true }, store.get('settings', {}));
@@ -806,7 +609,6 @@ function showPage(id) {
   if (id === 'page-coursetable' && window.CourseSync && window.CourseSync.renderCourseTable) window.CourseSync.renderCourseTable();
   if (id === 'page-settings') loadSettingsUI();
   if (id === 'page-chat') renderChat();
-  requestAnimationFrame(() => syncGlassSnap());
 }
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => showPage(tab.dataset.page));
@@ -2642,7 +2444,6 @@ try {
 (async function init() {
   applyTheme();
   syncSafeAreas();
-  initLiquidGlass();
   purgeOldSources(); /* v1.8.8：完成满 1 天的日程，原始来源自动清理 */
   loadSettingsUI();
   renderSchedule();
