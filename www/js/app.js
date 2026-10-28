@@ -1390,23 +1390,53 @@ $('btnClearDone').onclick = async () => {
 
 /* v1.8.6：日程页的手动添加入口已移除（统一走「解析」页或 AI 助手） */
 
-/* v1.9.34：顶部下拉不再触发系统回弹（避免固定导航栏被拉伸后卡住） */
-(function suppressTopOverscroll() {
+/* v1.9.35：日程页自制顶部回弹——内容下有阻尼、松手弹回，导航栏不参与系统拉伸 */
+(function initTopBounce() {
   const page = $('page-schedule');
   if (!page) return;
-  let startY = 0, active = false;
+  const MAX = 96, DAMP = 0.45;
+  let startY = 0, pulling = false, dy = 0, pending = 0, raf = 0, releaseTimer = 0;
+
+  function apply(next) {
+    dy = next;
+    page.style.transform = next > 0 ? 'translateY(' + next.toFixed(1) + 'px)' : '';
+  }
+  function springBack() {
+    page.style.transition = 'transform .34s cubic-bezier(.22,.9,.32,1.08)';
+    apply(0);
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(() => { page.style.transition = ''; page.style.willChange = ''; }, 360);
+  }
   page.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
-    active = (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+    if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) return;
     startY = e.touches[0].clientY;
+    pulling = true;
+    dy = 0;
+    pending = 0;
+    page.style.transition = 'none';
   }, { passive: true });
   page.addEventListener('touchmove', (e) => {
-    if (!active || e.touches.length !== 1) return;
-    if ((window.scrollY || document.documentElement.scrollTop || 0) <= 0 &&
-        e.touches[0].clientY - startY > 6 && e.cancelable) e.preventDefault();
+    if (!pulling || e.touches.length !== 1) return;
+    if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) { pulling = false; springBack(); return; }
+    if (e.touches[0].clientY - startY <= 0) { if (dy) apply(0); return; }
+    if (e.cancelable) e.preventDefault();
+    pending = Math.min((e.touches[0].clientY - startY) * DAMP, MAX);
+    page.style.willChange = 'transform';
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; apply(pending); });
   }, { passive: false });
-  page.addEventListener('touchend', () => { active = false; }, { passive: true });
-  page.addEventListener('touchcancel', () => { active = false; }, { passive: true });
+  const finish = () => {
+    if (!pulling) return;
+    pulling = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (dy > 0 || pending > 0) {
+      if (!dy && pending > 0) apply(pending);
+      springBack();
+    } else { page.style.transition = ''; page.style.willChange = ''; }
+    pending = 0;
+  };
+  page.addEventListener('touchend', finish, { passive: true });
+  page.addEventListener('touchcancel', finish, { passive: true });
 })();
 
 /* ============ 设置 ============ */
