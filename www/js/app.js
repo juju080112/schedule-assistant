@@ -81,7 +81,6 @@ async function applyBackground() {
     b.style.setProperty('--bg-image', 'url("' + bgConfig.image + '")');
     if (wrap) wrap.hidden = true;
     if (v) v.pause();
-    try { CardContrast.refresh(); } catch (e) {}
     return;
   }
   if (bgConfig.video) {
@@ -91,7 +90,6 @@ async function applyBackground() {
       b.style.removeProperty('--bg-image');
       if (wrap) wrap.hidden = false;
       if (v) { applyVideoCrop(); v.play().catch(() => {}); }
-      try { CardContrast.refresh(); } catch (e) {}
       return;
     }
     bgConfig.video = '';
@@ -101,7 +99,6 @@ async function applyBackground() {
   b.style.removeProperty('--bg-image');
   if (wrap) wrap.hidden = true;
   if (v) v.pause();
-  try { CardContrast.refresh(); } catch (e) {}
 }
 function renderBackgroundUI() {
   const hasImg = !!bgConfig.image;
@@ -2564,6 +2561,43 @@ const GlassFX = (() => {
       el.style.webkitBackdropFilter = el.style.backdropFilter;
     });
   }
+  /* v1.9.32 每条日程卡片：与导航栏同源的实时折射（只对视口内的卡片启用） */
+  const cardCache = new Map();
+  let cardIO = null;
+  function removeCardGlass(el) {
+    if (!el.style.backdropFilter) return;
+    el.style.backdropFilter = '';
+    el.style.webkitBackdropFilter = '';
+  }
+  function applyCardGlass(el) {
+    if (!el.isConnected) return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 20 || r.height < 20) return;
+    const w = Math.round(r.width), h = Math.round(r.height);
+    const key = w + 'x' + h;
+    let id = cardCache.get(key);
+    if (!id) {
+      id = 'lgCard' + (++chipSeq);
+      addLensFilter(id);
+      setFilter(id, buildMap(w, h, 16, 10, false, 6));
+      cardCache.set(key, id);
+    }
+    el.style.backdropFilter = 'url(#' + id + ') blur(3px) saturate(170%) brightness(1.06)';
+    el.style.webkitBackdropFilter = el.style.backdropFilter;
+  }
+  function refreshCards() {
+    if (cardIO) { cardIO.disconnect(); cardIO = null; }
+    const cards = document.querySelectorAll('#scheduleList .card-item, #unschedBlock .card-item, #doneBlock .card-item');
+    const on = document.body.dataset.bg === 'image' || document.body.dataset.bg === 'video';
+    if (!on) { cards.forEach(removeCardGlass); return; }
+    cardIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) applyCardGlass(en.target);
+        else removeCardGlass(en.target);
+      });
+    }, { rootMargin: '60px 0px' });
+    cards.forEach((el) => cardIO.observe(el));
+  }
   function applyWarp(el, filterId) {
     let w = el.querySelector(':scope > .lg-warp');
     if (!w) {
@@ -2613,7 +2647,7 @@ const GlassFX = (() => {
     }
     applyWarp(t, TAB_ID);
   }
-  function refreshAll() { refreshHeader(); refreshTab(); refreshChips(); }
+  function refreshAll() { refreshHeader(); refreshTab(); refreshChips(); refreshCards(); }
   function schedule() {
     if (raf) return;
     raf = requestAnimationFrame(() => { raf = 0; refreshAll(); });
@@ -2631,7 +2665,7 @@ const GlassFX = (() => {
     }
     const chipObserver = new MutationObserver(() => {
       if (chipRaf) return;
-      chipRaf = requestAnimationFrame(() => { chipRaf = 0; refreshChips(); });
+      chipRaf = requestAnimationFrame(() => { chipRaf = 0; refreshChips(); refreshCards(); });
     });
     ['scheduleList', 'unschedBlock', 'doneBlock', 'courseScheduleList'].forEach((id) => {
       const el = document.getElementById(id);
@@ -2641,63 +2675,9 @@ const GlassFX = (() => {
     /* 字体/布局稳定后再校准一次尺寸 */
     setTimeout(refreshAll, 400);
   }
-  return { init, refreshHeader, refreshAll, refreshChips };
+  return { init, refreshHeader, refreshAll, refreshChips, refreshCards };
 })();
 window.GlassFX = GlassFX;
-
-/* ============ v1.9.31 背景偏暗时提高卡片可读性 ============
-   采样视频/图片背景的暗部亮度，给卡片垫一层自适应白色底衬；
-   只调整卡片底色透明度，不做逐卡滤镜，几乎零开销。 */
-const CardContrast = (() => {
-  const cv = document.createElement('canvas');
-  cv.width = 32; cv.height = 32;
-  const ctx = cv.getContext('2d', { willReadFrequently: true });
-  let timer = 0, lastImg = '';
-
-  function luma20() {
-    const d = ctx.getImageData(0, 0, 32, 32).data;
-    const arr = [];
-    for (let i = 0; i < d.length; i += 4) {
-      arr.push((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255);
-    }
-    arr.sort((a, b) => a - b);
-    return arr[Math.floor(arr.length * 0.1)];
-  }
-  function apply(l) {
-    const veil = Math.max(0, Math.min(0.32, (0.62 - l) * 0.85));
-    document.documentElement.style.setProperty('--card-veil', veil.toFixed(2));
-    document.documentElement.classList.toggle('bg-dark', l < 0.33);
-  }
-  function sampleVideo() {
-    const v = $('bgVideo');
-    if (!v || !v.videoWidth) return;
-    try { ctx.drawImage(v, 0, 0, 32, 32); apply(luma20()); } catch (e) {}
-  }
-  function sampleImage() {
-    if (!bgConfig.image || bgConfig.image === lastImg) return;
-    lastImg = bgConfig.image;
-    const img = new Image();
-    img.onload = () => { try { ctx.drawImage(img, 0, 0, 32, 32); apply(luma20()); } catch (e) {} };
-    img.src = bgConfig.image;
-  }
-  function refresh() {
-    if (bgConfig.video) sampleVideo();
-    else if (bgConfig.image) sampleImage();
-    else {
-      document.documentElement.style.setProperty('--card-veil', '0');
-      document.documentElement.classList.remove('bg-dark');
-    }
-  }
-  function init() {
-    refresh();
-    clearInterval(timer);
-    timer = setInterval(() => { if (!document.hidden && bgConfig.video) sampleVideo(); }, 1500);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-    new MutationObserver(refresh).observe(document.body, { attributes: true, attributeFilter: ['data-bg'] });
-  }
-  return { init, refresh };
-})();
-window.CardContrast = CardContrast;
 
 /* ============ 启动 ============ */
 (async function init() {
@@ -2707,7 +2687,6 @@ window.CardContrast = CardContrast;
   loadSettingsUI();
   renderSchedule();
   GlassFX.init();
-  CardContrast.init();
   await ensureNotifyPermission();
   await ensureChannels();
   updateTodayBar();
