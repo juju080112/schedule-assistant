@@ -1393,20 +1393,21 @@ $('btnClearDone').onclick = async () => {
 /* v1.9.35：日程页自制顶部回弹——内容下有阻尼、松手弹回，导航栏不参与系统拉伸 */
 (function initTopBounce() {
   const page = $('page-schedule');
-  if (!page) return;
+  const scroller = $('scheduleScrollBody');
+  if (!page || !scroller) return;
   const MAX = 220, K = 280;
   let startY = 0, pulling = false, dy = 0, pending = 0, raf = 0, releaseTimer = 0;
 
   function apply(next) {
     dy = next;
-    page.style.transform = next > 0 ? 'translateY(' + next.toFixed(1) + 'px)' : '';
+    scroller.style.transform = next > 0 ? 'translateY(' + next.toFixed(1) + 'px)' : '';
   }
   function springBack() {
     const dur = 0.3 + Math.min(dy, MAX) / MAX * 0.18;
-    page.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.22,.9,.32,1.04)';
+    scroller.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.22,.9,.32,1.04)';
     apply(0);
     clearTimeout(releaseTimer);
-    releaseTimer = setTimeout(() => { page.style.transition = ''; page.style.willChange = ''; }, 360);
+    releaseTimer = setTimeout(() => { scroller.style.transition = ''; scroller.style.willChange = ''; }, 520);
   }
   page.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
@@ -1415,7 +1416,7 @@ $('btnClearDone').onclick = async () => {
     pulling = true;
     dy = 0;
     pending = 0;
-    page.style.transition = 'none';
+    scroller.style.transition = 'none';
   }, { passive: true });
   page.addEventListener('touchmove', (e) => {
     if (!pulling || e.touches.length !== 1) return;
@@ -1424,7 +1425,7 @@ $('btnClearDone').onclick = async () => {
     if (e.cancelable) e.preventDefault();
     const d = e.touches[0].clientY - startY;
     pending = MAX * (1 - Math.exp(-d / K));
-    page.style.willChange = 'transform';
+    scroller.style.willChange = 'transform';
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; apply(pending); });
   }, { passive: false });
   const finish = () => {
@@ -1434,7 +1435,7 @@ $('btnClearDone').onclick = async () => {
     if (dy > 0 || pending > 0) {
       if (!dy && pending > 0) apply(pending);
       springBack();
-    } else { page.style.transition = ''; page.style.willChange = ''; }
+    } else { scroller.style.transition = ''; scroller.style.willChange = ''; }
     pending = 0;
   };
   page.addEventListener('touchend', finish, { passive: true });

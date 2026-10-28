@@ -58,6 +58,7 @@
         <input type="text" id="quickAddInput" placeholder="快速添加待办，回车保存" autocomplete="off" autocapitalize="off" spellcheck="false">
         <button class="quick-add-btn" id="quickAddBtn" type="button" aria-label="添加待办">＋</button>
       </div>
+      <div id="scheduleScrollBody">
       <div id="scheduleEmpty" class="empty-state" hidden>
         <div class="empty-ico">🗓️</div>
         <div class="empty-title">还没有日程</div>
@@ -76,6 +77,7 @@
       <div id="doneBlock" hidden>
         <div class="date-head">已完成（<span id="doneCount">0</span>）<button class="done-clear" id="btnClearDone">一键清理</button></div>
         <div id="doneList" class="list"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -134,7 +136,7 @@
         <button class="set-link" data-sub="guide" type="button"><span class="set-ico">📖</span><span class="set-name">使用指南</span><span class="chev">›</span></button>
         <button class="set-link" data-sub="data" type="button"><span class="set-ico">🗂️</span><span class="set-name">数据管理</span><span class="chev">›</span></button>
       </div>
-      <p class="version">日程助手 v1.9.36</p>
+      <p class="version">日程助手 v1.9.37</p>
     </div>
   </div>
 
