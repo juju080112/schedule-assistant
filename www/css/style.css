@@ -240,8 +240,15 @@ textarea { resize: none; line-height: 1.6; }
 }
 
 /* v1.9.26 液态玻璃折射层（参考 rdev/liquid-glass-react）：
-   backdrop-filter 抓实时背景，filter: url() 做贴边透镜位移；z-index:-1 保证文字在最上层 */
+   .lg-warp 只负责抓实时背景并做贴边位移，不画任何染色/高光，
+   避免滤镜把外框圆角和高光一起扭歪；.lg-tint 单独画玻璃染色与外圈高光。 */
 .lg-warp {
+  position: absolute; inset: 0; z-index: -1;
+  pointer-events: none; border-radius: inherit;
+  backdrop-filter: blur(6px) saturate(170%) brightness(1.08);
+  -webkit-backdrop-filter: blur(6px) saturate(170%) brightness(1.08);
+}
+.lg-tint {
   position: absolute; inset: 0; z-index: -1;
   pointer-events: none; border-radius: inherit;
   background: linear-gradient(155deg,
@@ -253,8 +260,6 @@ textarea { resize: none; line-height: 1.6; }
     inset 0 1px 1px rgba(255, 255, 255, .62),
     inset 0 -1px 1px rgba(255, 255, 255, .22),
     inset 0 0 0 .5px rgba(255, 255, 255, .16);
-  backdrop-filter: blur(6px) saturate(170%) brightness(1.08);
-  -webkit-backdrop-filter: blur(6px) saturate(170%) brightness(1.08);
 }
 
 /* 底部导航：iOS 26 液态玻璃悬浮胶囊（v1.9.15） */

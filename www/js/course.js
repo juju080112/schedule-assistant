@@ -1230,7 +1230,7 @@
   function exportDiagnostics() {
     var p = coursePlugin();
     if (!p || !p.dumpDiagnostics) { toast('当前环境不支持导出诊断（需在 App 内运行）'); return; }
-    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.26' };
+    var payload = { exportedAt: new Date().toISOString(), appVersion: 'v1.9.27' };
     try { payload.term = getTerm(); } catch (e) {}
     try { payload.courses = getList(); } catch (e) {}
     try { payload.syncedAt = getSyncAt() ? new Date(getSyncAt()).toISOString() : null; } catch (e) {}

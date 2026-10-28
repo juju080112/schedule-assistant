@@ -2524,6 +2524,12 @@ const GlassFX = (() => {
       w.setAttribute('aria-hidden', 'true');
       el.insertBefore(w, el.firstChild);
     }
+    if (!el.querySelector(':scope > .lg-tint')) {
+      const tint = document.createElement('span');
+      tint.className = 'lg-tint';
+      tint.setAttribute('aria-hidden', 'true');
+      el.insertBefore(tint, w.nextSibling);
+    }
     const url = 'url(#' + filterId + ')';
     if (w.style.filter !== url) {
       w.style.filter = url;
