@@ -1394,7 +1394,7 @@ $('btnClearDone').onclick = async () => {
 (function initTopBounce() {
   const page = $('page-schedule');
   if (!page) return;
-  const MAX = 96, DAMP = 0.45;
+  const MAX = 220, K = 280;
   let startY = 0, pulling = false, dy = 0, pending = 0, raf = 0, releaseTimer = 0;
 
   function apply(next) {
@@ -1402,7 +1402,8 @@ $('btnClearDone').onclick = async () => {
     page.style.transform = next > 0 ? 'translateY(' + next.toFixed(1) + 'px)' : '';
   }
   function springBack() {
-    page.style.transition = 'transform .34s cubic-bezier(.22,.9,.32,1.08)';
+    const dur = 0.3 + Math.min(dy, MAX) / MAX * 0.18;
+    page.style.transition = 'transform ' + dur.toFixed(2) + 's cubic-bezier(.22,.9,.32,1.04)';
     apply(0);
     clearTimeout(releaseTimer);
     releaseTimer = setTimeout(() => { page.style.transition = ''; page.style.willChange = ''; }, 360);
@@ -1421,7 +1422,8 @@ $('btnClearDone').onclick = async () => {
     if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) { pulling = false; springBack(); return; }
     if (e.touches[0].clientY - startY <= 0) { if (dy) apply(0); return; }
     if (e.cancelable) e.preventDefault();
-    pending = Math.min((e.touches[0].clientY - startY) * DAMP, MAX);
+    const d = e.touches[0].clientY - startY;
+    pending = MAX * (1 - Math.exp(-d / K));
     page.style.willChange = 'transform';
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; apply(pending); });
   }, { passive: false });
