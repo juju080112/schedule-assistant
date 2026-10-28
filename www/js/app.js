@@ -2572,6 +2572,51 @@ const GlassFX = (() => {
     }, { rootMargin: '60px 0px' });
     cards.forEach((el) => cardIO.observe(el));
   }
+  /* v1.9.38 其他页面的液态玻璃面板（解析结果卡/上传区、设置分组/子页面板） */
+  const surfaceCache = new Map();
+  let surfaceIO = null, surfaceRO = null;
+  const SURFACE_SEL = '.result-card, .attach-item, .btn-icon, .set-menu, #settingsSub .sheet';
+  function surfaceParams(el) {
+    if (el.closest('#settingsSub')) return { band: 16, shift: 8, blur: 18, radius: 0 };
+    if (el.classList.contains('btn-icon') || el.classList.contains('attach-item')) return { band: 6, shift: 3, blur: 3, radius: 12 };
+    return { band: 12, shift: 6, blur: 3, radius: 16 };
+  }
+  function removeSurface(el) {
+    if (!el.style.backdropFilter) return;
+    el.style.backdropFilter = '';
+    el.style.webkitBackdropFilter = '';
+  }
+  function applySurface(el) {
+    if (!el.isConnected || el.closest('[hidden]')) { removeSurface(el); return; }
+    const r = el.getBoundingClientRect();
+    if (r.width < 12 || r.height < 12) return;
+    const p = surfaceParams(el);
+    const w = Math.round(r.width), h = Math.round(r.height);
+    const key = w + 'x' + h + ':' + p.band + ':' + p.shift;
+    let id = surfaceCache.get(key);
+    if (!id) {
+      id = 'lgSurf' + (++chipSeq);
+      addLensFilter(id);
+      setFilter(id, buildMap(w, h, p.radius, p.band, false, p.shift));
+      surfaceCache.set(key, id);
+    }
+    el.style.backdropFilter = 'url(#' + id + ') blur(' + p.blur + 'px) saturate(170%) brightness(1.06)';
+    el.style.webkitBackdropFilter = el.style.backdropFilter;
+  }
+  function refreshSurfaces() {
+    if (surfaceIO) { surfaceIO.disconnect(); surfaceIO = null; }
+    if (surfaceRO) { surfaceRO.disconnect(); surfaceRO = null; }
+    const els = document.querySelectorAll(SURFACE_SEL);
+    const on = document.body.dataset.bg === 'image' || document.body.dataset.bg === 'video';
+    if (!on) { els.forEach(removeSurface); return; }
+    surfaceIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => { if (en.isIntersecting) applySurface(en.target); else removeSurface(en.target); });
+    }, { rootMargin: '80px 0px' });
+    surfaceRO = new ResizeObserver((entries) => {
+      entries.forEach((en) => { if (!en.target.closest('[hidden]')) applySurface(en.target); });
+    });
+    els.forEach((el) => { surfaceIO.observe(el); surfaceRO.observe(el); });
+  }
   function applyWarp(el, filterId) {
     let w = el.querySelector(':scope > .lg-warp');
     if (!w) {
@@ -2621,7 +2666,7 @@ const GlassFX = (() => {
     }
     applyWarp(t, TAB_ID);
   }
-  function refreshAll() { refreshHeader(); refreshTab(); refreshChips(); refreshCards(); }
+  function refreshAll() { refreshHeader(); refreshTab(); refreshChips(); refreshCards(); refreshSurfaces(); }
   function schedule() {
     if (raf) return;
     raf = requestAnimationFrame(() => { raf = 0; refreshAll(); });
@@ -2639,9 +2684,9 @@ const GlassFX = (() => {
     }
     const chipObserver = new MutationObserver(() => {
       if (chipRaf) return;
-      chipRaf = requestAnimationFrame(() => { chipRaf = 0; refreshChips(); refreshCards(); });
+      chipRaf = requestAnimationFrame(() => { chipRaf = 0; refreshChips(); refreshCards(); refreshSurfaces(); });
     });
-    ['scheduleList', 'unschedBlock', 'doneBlock', 'courseScheduleList'].forEach((id) => {
+    ['scheduleList', 'unschedBlock', 'doneBlock', 'courseScheduleList', 'attachList'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) chipObserver.observe(el, { childList: true, subtree: true });
     });
@@ -2649,7 +2694,7 @@ const GlassFX = (() => {
     /* 字体/布局稳定后再校准一次尺寸 */
     setTimeout(refreshAll, 400);
   }
-  return { init, refreshHeader, refreshAll, refreshChips, refreshCards };
+  return { init, refreshHeader, refreshAll, refreshChips, refreshCards, refreshSurfaces };
 })();
 window.GlassFX = GlassFX;
 
