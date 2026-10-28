@@ -2522,7 +2522,7 @@ const GlassFX = (() => {
     el.style.webkitBackdropFilter = '';
     el.style.boxShadow = '';
   }
-  function addChipFilter(id) {
+  function addLensFilter(id) {
     const f = document.createElementNS(NS, 'filter');
     f.setAttribute('id', id);
     f.setAttribute('x', '0'); f.setAttribute('y', '0');
@@ -2552,7 +2552,7 @@ const GlassFX = (() => {
       let id = chipCache.get(key);
       if (!id) {
         id = 'lgChip' + (++chipSeq);
-        addChipFilter(id);
+        addLensFilter(id);
         setFilter(id, buildMap(w, h, h / 2, 6, false, 3));
         chipCache.set(key, id);
       }
