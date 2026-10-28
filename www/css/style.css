@@ -190,10 +190,12 @@ textarea { resize: none; line-height: 1.6; }
 
 .list { display: flex; flex-direction: column; gap: 10px; }
 .card-item {
-  background: linear-gradient(152deg,
+  background-color: rgba(255, 255, 255, var(--card-veil, 0));
+  background-image: linear-gradient(152deg,
     rgba(255, 255, 255, .42) 0%,
     rgba(255, 255, 255, .24) 40%,
     rgba(255, 255, 255, .32) 100%);
+  transition: background-color .5s ease;
   border-radius: var(--radius); padding: 15px 16px;
   display: flex; align-items: flex-start; gap: 12px;
   box-shadow:
@@ -203,6 +205,9 @@ textarea { resize: none; line-height: 1.6; }
   transition: background .15s, transform .15s;
 }
 .card-item .body { flex: 1; min-width: 0; }
+/* v1.9.31 深色背景下加强卡片文字对比 */
+html.bg-dark .card-item .title { text-shadow: 0 1px 2px rgba(255, 255, 255, .6); }
+html.bg-dark .card-item .meta { color: #46525F; text-shadow: 0 1px 1px rgba(255, 255, 255, .4); }
 .card-item .title { font-size: 15px; font-weight: 500; line-height: 1.5; word-break: break-all; }
 .card-item .meta { font-size: 12px; color: var(--text-sub); margin-top: 5px; }
 .card-item.done .title { text-decoration: line-through; color: var(--text-sub); font-weight: 400; }
