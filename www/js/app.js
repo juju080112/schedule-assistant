@@ -1390,6 +1390,25 @@ $('btnClearDone').onclick = async () => {
 
 /* v1.8.6：日程页的手动添加入口已移除（统一走「解析」页或 AI 助手） */
 
+/* v1.9.34：顶部下拉不再触发系统回弹（避免固定导航栏被拉伸后卡住） */
+(function suppressTopOverscroll() {
+  const page = $('page-schedule');
+  if (!page) return;
+  let startY = 0, active = false;
+  page.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    active = (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+  page.addEventListener('touchmove', (e) => {
+    if (!active || e.touches.length !== 1) return;
+    if ((window.scrollY || document.documentElement.scrollTop || 0) <= 0 &&
+        e.touches[0].clientY - startY > 6 && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  page.addEventListener('touchend', () => { active = false; }, { passive: true });
+  page.addEventListener('touchcancel', () => { active = false; }, { passive: true });
+})();
+
 /* ============ 设置 ============ */
 let aiEditingId = null;
 

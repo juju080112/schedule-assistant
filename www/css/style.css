@@ -75,8 +75,9 @@
   background: rgba(var(--bg-scrim-rgb), var(--bg-scrim-alpha, .3));
 }
 
-html { height: 100%; }
+html { height: 100%; overscroll-behavior-y: none; }
 body {
+  overscroll-behavior-y: none;
   font-family: "HarmonyOS Sans SC", "MiSans", -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   background-color: var(--bg);
   background-image:
