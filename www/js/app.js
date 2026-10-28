@@ -1252,14 +1252,13 @@ function scheduleCard(t, all) {
   const div = document.createElement('div');
   div.className = 'card-item' + (t.done ? ' done' : '');
   const overdue = t.due && !t.done && t.due < Date.now();
-  /* v1.8.12：课程日程的提醒由原生课程闹钟负责，这里同样显示"已设通知" */
-  const notifyTxt = t.notifyId ? ' · 已设通知' : (t.courseKey ? ' · 已设通知' : ' · 未设通知');
+  const notifyTxt = (t.notifyId || t.courseKey) ? '' : ' · 未设通知';
   div.innerHTML = `
       <button class="chk ${t.done ? 'checked' : ''}">${t.done ? '✓' : ''}</button>
       <div class="body">
         <div class="title">${escapeHtml(t.title)}</div>
         ${t.detail ? `<div class="meta">${escapeHtml(t.detail)}</div>` : ''}
-        ${t.due ? `<div class="meta" style="color:${overdue ? 'var(--danger)' : 'var(--primary)'}">⏰ ${fmtDate(t.due)}${overdue ? '（已过时）' : ''}${t.done ? '' : notifyTxt}</div>` : ''}
+        ${t.due ? `<div class="meta" style="color:#000">⏰ ${fmtDate(t.due)}${overdue ? '（已过时）' : ''}${t.done ? '' : notifyTxt}</div>` : ''}
       </div>
       <button class="del">✕</button>`;
   div.querySelector('.chk').onclick = async () => {
@@ -1390,83 +1389,6 @@ $('btnClearDone').onclick = async () => {
 };
 
 /* v1.8.6：日程页的手动添加入口已移除（统一走「解析」页或 AI 助手） */
-
-/* ============ 日程页下拉刷新（v1.8.19） ============
-   在页面顶部下拉即刷新：取回后台同步的课表 → 对账课程日程 → 清理过期原文件 → 重绘。
-   只在「滚动到顶部 + 单指下拉」时生效，不影响正常滚动。 */
-(function initPullToRefresh() {
-  const page = $('page-schedule');
-  const bar = $('ptrBar');
-  const label = $('ptrText');
-  if (!page || !bar || !label) return;
-  const THRESHOLD = 64;   /* 触发阈值（阻尼后位移，px） */
-  const MAX = 110;        /* 最大下拉位移 */
-  let startY = 0, dist = 0, pulling = false, busy = false;
-
-  const paint = (d) => {
-    bar.style.transform = `translate(-50%, calc(-180% + ${d}px))`;
-    if (d > 4) bar.classList.add('show'); else bar.classList.remove('show');
-  };
-  const reset = () => {
-    dist = 0; pulling = false;
-    bar.classList.remove('show', 'ready', 'loading');
-    bar.style.transform = '';
-  };
-  const refresh = async () => {
-    if (busy) return;
-    busy = true;
-    bar.classList.add('show', 'ready', 'loading');
-    bar.style.transform = 'translate(-50%, 0)';
-    label.textContent = '刷新中…';
-    try {
-      /* 1) 取回每日后台同步的课表（若有更新则采纳） */
-      if (window.CourseSync && window.CourseSync.pullNativeState) {
-        try { await window.CourseSync.pullNativeState(); } catch (e) {}
-      }
-      /* 2) 对账课程日程：新增/更新/删除 */
-      if (window.CourseSync && window.CourseSync.rollSessions) {
-        try { window.CourseSync.rollSessions(); } catch (e) {}
-      }
-      /* 3) 常规整理：清理过期原文件、重绘时间线、刷新常驻栏 */
-      purgeOldSources();
-      renderSchedule();
-      refreshTodayBar();
-      if (typeof loadSettingsUI === 'function') loadSettingsUI();
-    } catch (e) { console.error('下拉刷新失败', e); }
-    label.textContent = '已刷新';
-    setTimeout(() => { busy = false; reset(); }, 500);
-  };
-
-  page.addEventListener('touchstart', (e) => {
-    if (busy || e.touches.length !== 1) return;
-    const y = window.scrollY || document.documentElement.scrollTop || 0;
-    if (y > 0) return;                 /* 只在顶部生效 */
-    startY = e.touches[0].clientY;
-    dist = 0;
-    pulling = true;
-  }, { passive: true });
-
-  page.addEventListener('touchmove', (e) => {
-    if (!pulling || busy) return;
-    const dy = e.touches[0].clientY - startY;
-    if (dy <= 0) { dist = 0; paint(0); return; }
-    dist = Math.min(dy * 0.5, MAX);    /* 阻尼系数 0.5 */
-    paint(dist);
-    const ready = dist >= THRESHOLD;
-    bar.classList.toggle('ready', ready);
-    label.textContent = ready ? '松手刷新' : '下拉刷新';
-    if (dist > 6 && e.cancelable) e.preventDefault();   /* 抑制顶部橡皮筋 */
-  }, { passive: false });
-
-  const finish = () => {
-    if (!pulling) return;
-    const reached = dist >= THRESHOLD;
-    pulling = false;
-    if (reached) refresh(); else reset();
-  };
-  page.addEventListener('touchend', finish, { passive: true });
-  page.addEventListener('touchcancel', finish, { passive: true });
-})();
 
 /* ============ 设置 ============ */
 let aiEditingId = null;
