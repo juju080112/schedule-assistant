@@ -779,3 +779,29 @@ body[data-bg="video"] #doneBlock .date-head { color: var(--text); }
 }
 .crop-tools { width: 100%; display: flex; gap: 10px; }
 .crop-tool { flex: 1; border: none; background: rgba(255, 255, 255, .16); color: #fff; border-radius: 12px; padding: 11px; font-size: 14px; }
+
+
+/* ================= v1.9.24 液态玻璃折射层（SVG displacement） ================= */
+.glass-snap {
+  position: fixed; overflow: hidden; pointer-events: none;
+  z-index: -1; display: none;
+}
+.glass-snap-bg {
+  position: absolute; inset: 0;
+  background-attachment: fixed;
+  background-size: cover;
+  background-position: center;
+}
+.glass-snap-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(255, 255, 255, var(--snap-tint, .3));
+  pointer-events: none;
+}
+/* 启用折射时导航栏自身透明，玻璃由快照层表现 */
+body.lg-on .header,
+body.lg-on .tabbar {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
