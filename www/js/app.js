@@ -609,6 +609,7 @@ function showPage(id) {
   if (id === 'page-coursetable' && window.CourseSync && window.CourseSync.renderCourseTable) window.CourseSync.renderCourseTable();
   if (id === 'page-settings') loadSettingsUI();
   if (id === 'page-chat') renderChat();
+  if (window.GlassFX) window.GlassFX.refreshHeader();
 }
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => showPage(tab.dataset.page));
@@ -2440,6 +2441,144 @@ try {
   }
 } catch (e) {}
 
+/* ============ v1.9.26 顶栏/底栏液态玻璃折射 ============
+   思路来自 rdev/liquid-glass-react（6543★）：捕获层 backdrop-filter 抓实时背景，
+   再对捕获层应用 SVG feDisplacementMap 做贴边透镜位移，背景始终跟着滚动/视频变化。 */
+const GlassFX = (() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const HDR_ID = 'lgHeaderF', TAB_ID = 'lgTabF';
+  let defs = null, headKey = '', tabKey = '', raf = 0;
+
+  function smoothstep(t) {
+    t = Math.max(0, Math.min(1, t));
+    return t * t * (3 - 2 * t);
+  }
+  function sdf(x, y, w, h, r) {
+    const hx = w / 2 - r, hy = h / 2 - r;
+    const qx = Math.abs(x - w / 2) - hx, qy = Math.abs(y - h / 2) - hy;
+    const ax = Math.max(qx, 0), ay = Math.max(qy, 0);
+    return Math.sqrt(ax * ax + ay * ay) + Math.min(Math.max(qx, qy), 0) - r;
+  }
+  /* 位移图：边缘处把采样点向中心收，形成放大+压缩的透镜边缘；中心保持中性 */
+  function buildMap(w, h, radius, band, bottomOnly, shift) {
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const xs = new Float32Array(w * h), ys = new Float32Array(w * h);
+    let maxAbs = 1e-6;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const d = bottomOnly ? (h - y - 0.5) : -sdf(x + 0.5, y + 0.5, w, h, radius);
+        const t = smoothstep(1 - d / band);
+        const dx = (w / 2 - (x + 0.5)) * t;
+        const dy = (h / 2 - (y + 0.5)) * t;
+        xs[i] = dx; ys[i] = dy;
+        const a = Math.max(Math.abs(dx), Math.abs(dy));
+        if (a > maxAbs) maxAbs = a;
+      }
+    }
+    for (let i = 0; i < w * h; i++) {
+      const k = i * 4;
+      img.data[k] = Math.round(128 + xs[i] / maxAbs * 127);
+      img.data[k + 1] = Math.round(128 + ys[i] / maxAbs * 127);
+      img.data[k + 2] = img.data[k + 1];
+      img.data[k + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return { url: cv.toDataURL('image/png'), shift };
+  }
+  function ensureDefs() {
+    if (defs) return defs;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.id = 'lgDefs';
+    svg.setAttribute('aria-hidden', 'true');
+    svg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+    svg.innerHTML =
+      '<filter id="' + HDR_ID + '" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' +
+        '<feImage x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="M"/>' +
+        '<feDisplacementMap in="SourceGraphic" in2="M" xChannelSelector="R" yChannelSelector="G"/>' +
+      '</filter>' +
+      '<filter id="' + TAB_ID + '" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' +
+        '<feImage x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="M"/>' +
+        '<feDisplacementMap in="SourceGraphic" in2="M" xChannelSelector="R" yChannelSelector="G"/>' +
+      '</filter>';
+    document.body.appendChild(svg);
+    defs = svg;
+    return svg;
+  }
+  function setFilter(id, map) {
+    const f = defs.querySelector('#' + id);
+    f.querySelector('feImage').setAttribute('href', map.url);
+    f.querySelector('feDisplacementMap').setAttribute('scale', map.shift * 2);
+  }
+  function applyWarp(el, filterId) {
+    let w = el.querySelector(':scope > .lg-warp');
+    if (!w) {
+      el.style.background = 'transparent';
+      el.style.backdropFilter = 'none';
+      el.style.webkitBackdropFilter = 'none';
+      w = document.createElement('span');
+      w.className = 'lg-warp';
+      w.setAttribute('aria-hidden', 'true');
+      el.insertBefore(w, el.firstChild);
+    }
+    const url = 'url(#' + filterId + ')';
+    if (w.style.filter !== url) {
+      w.style.filter = url;
+      w.style.webkitFilter = url;
+    }
+  }
+  function refreshHeader() {
+    const h = document.querySelector('.page.active .header');
+    if (!h) return;
+    const r = h.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return;
+    const w = Math.round(r.width), ht = Math.round(r.height);
+    const key = w + 'x' + ht;
+    if (key !== headKey) {
+      headKey = key;
+      setFilter(HDR_ID, buildMap(w, ht, 0, 14, true, 7));
+    }
+    applyWarp(h, HDR_ID);
+  }
+  function refreshTab() {
+    const t = document.querySelector('.tabbar');
+    if (!t) return;
+    const r = t.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return;
+    const w = Math.round(r.width), ht = Math.round(r.height);
+    const key = w + 'x' + ht;
+    if (key !== tabKey) {
+      tabKey = key;
+      setFilter(TAB_ID, buildMap(w, ht, 31, 16, false, 12));
+    }
+    applyWarp(t, TAB_ID);
+  }
+  function refreshAll() { refreshHeader(); refreshTab(); }
+  function schedule() {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; refreshAll(); });
+  }
+  function init() {
+    ensureDefs();
+    refreshAll();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', () => setTimeout(refreshAll, 300));
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(schedule);
+      const tab = document.querySelector('.tabbar');
+      if (tab) ro.observe(tab);
+      document.querySelectorAll('.header').forEach((h) => ro.observe(h));
+    }
+    /* 字体/布局稳定后再校准一次尺寸 */
+    setTimeout(refreshAll, 400);
+  }
+  return { init, refreshHeader, refreshAll };
+})();
+window.GlassFX = GlassFX;
+
 /* ============ 启动 ============ */
 (async function init() {
   applyTheme();
@@ -2447,6 +2586,7 @@ try {
   purgeOldSources(); /* v1.8.8：完成满 1 天的日程，原始来源自动清理 */
   loadSettingsUI();
   renderSchedule();
+  GlassFX.init();
   await ensureNotifyPermission();
   await ensureChannels();
   updateTodayBar();
