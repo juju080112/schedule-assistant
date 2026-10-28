@@ -190,9 +190,16 @@ textarea { resize: none; line-height: 1.6; }
 
 .list { display: flex; flex-direction: column; gap: 10px; }
 .card-item {
-  background: var(--glass-card); border-radius: var(--radius); padding: 15px 16px;
+  background: linear-gradient(152deg,
+    rgba(255, 255, 255, .42) 0%,
+    rgba(255, 255, 255, .24) 40%,
+    rgba(255, 255, 255, .32) 100%);
+  border-radius: var(--radius); padding: 15px 16px;
   display: flex; align-items: flex-start; gap: 12px;
-  box-shadow: var(--glass-inset), var(--glass-shadow-soft);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, .45),
+    inset 0 -1px 1px rgba(255, 255, 255, .14),
+    var(--glass-shadow-soft);
   transition: background .15s, transform .15s;
 }
 .card-item .body { flex: 1; min-width: 0; }
