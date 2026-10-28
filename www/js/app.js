@@ -609,7 +609,7 @@ function showPage(id) {
   if (id === 'page-coursetable' && window.CourseSync && window.CourseSync.renderCourseTable) window.CourseSync.renderCourseTable();
   if (id === 'page-settings') loadSettingsUI();
   if (id === 'page-chat') renderChat();
-  if (window.GlassFX) window.GlassFX.refreshHeader();
+  if (window.GlassFX) window.GlassFX.refreshAll();
 }
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => showPage(tab.dataset.page));
@@ -2513,6 +2513,54 @@ const GlassFX = (() => {
     f.querySelector('feImage').setAttribute('href', map.url);
     f.querySelector('feDisplacementMap').setAttribute('scale', map.shift * 2);
   }
+  /* v1.9.28 日程/课程日期胶囊：更轻的折射，直接作用在胶囊自身的 backdrop-filter 上 */
+  const chipCache = new Map();
+  let chipSeq = 0, chipRaf = 0;
+  function removeChipGlass(el) {
+    if (!el.style.backdropFilter) return;
+    el.style.backdropFilter = '';
+    el.style.webkitBackdropFilter = '';
+    el.style.boxShadow = '';
+  }
+  function addChipFilter(id) {
+    const f = document.createElementNS(NS, 'filter');
+    f.setAttribute('id', id);
+    f.setAttribute('x', '0'); f.setAttribute('y', '0');
+    f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
+    f.setAttribute('color-interpolation-filters', 'sRGB');
+    const fe = document.createElementNS(NS, 'feImage');
+    fe.setAttribute('x', '0'); fe.setAttribute('y', '0');
+    fe.setAttribute('width', '100%'); fe.setAttribute('height', '100%');
+    fe.setAttribute('preserveAspectRatio', 'none');
+    fe.setAttribute('result', 'M');
+    const dm = document.createElementNS(NS, 'feDisplacementMap');
+    dm.setAttribute('in', 'SourceGraphic');
+    dm.setAttribute('in2', 'M');
+    dm.setAttribute('xChannelSelector', 'R');
+    dm.setAttribute('yChannelSelector', 'G');
+    f.appendChild(fe); f.appendChild(dm);
+    defs.appendChild(f);
+  }
+  function refreshChips() {
+    const on = document.body.dataset.bg === 'image' || document.body.dataset.bg === 'video';
+    document.querySelectorAll('.date-head, .course-date-head').forEach((el) => {
+      if (!on) { removeChipGlass(el); return; }
+      const r = el.getBoundingClientRect();
+      if (r.width < 12 || r.height < 12) return;
+      const w = Math.round(r.width), h = Math.round(r.height);
+      const key = w + 'x' + h;
+      let id = chipCache.get(key);
+      if (!id) {
+        id = 'lgChip' + (++chipSeq);
+        addChipFilter(id);
+        setFilter(id, buildMap(w, h, h / 2, 6, false, 3));
+        chipCache.set(key, id);
+      }
+      el.style.boxShadow = 'inset 0 1px 1px rgba(255,255,255,.45)';
+      el.style.backdropFilter = 'url(#' + id + ') blur(3px) saturate(160%) brightness(1.06)';
+      el.style.webkitBackdropFilter = el.style.backdropFilter;
+    });
+  }
   function applyWarp(el, filterId) {
     let w = el.querySelector(':scope > .lg-warp');
     if (!w) {
@@ -2562,7 +2610,7 @@ const GlassFX = (() => {
     }
     applyWarp(t, TAB_ID);
   }
-  function refreshAll() { refreshHeader(); refreshTab(); }
+  function refreshAll() { refreshHeader(); refreshTab(); refreshChips(); }
   function schedule() {
     if (raf) return;
     raf = requestAnimationFrame(() => { raf = 0; refreshAll(); });
@@ -2578,10 +2626,19 @@ const GlassFX = (() => {
       if (tab) ro.observe(tab);
       document.querySelectorAll('.header').forEach((h) => ro.observe(h));
     }
+    const chipObserver = new MutationObserver(() => {
+      if (chipRaf) return;
+      chipRaf = requestAnimationFrame(() => { chipRaf = 0; refreshChips(); });
+    });
+    ['scheduleList', 'unschedBlock', 'doneBlock', 'courseScheduleList'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) chipObserver.observe(el, { childList: true, subtree: true });
+    });
+    new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['data-bg'] });
     /* 字体/布局稳定后再校准一次尺寸 */
     setTimeout(refreshAll, 400);
   }
-  return { init, refreshHeader, refreshAll };
+  return { init, refreshHeader, refreshAll, refreshChips };
 })();
 window.GlassFX = GlassFX;
 
