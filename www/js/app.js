@@ -2434,34 +2434,45 @@ const GlassFX = (() => {
     return Math.sqrt(ax * ax + ay * ay) + Math.min(Math.max(qx, qy), 0) - r;
   }
   /* 位移图：边缘处把采样点向中心收，形成放大+压缩的透镜边缘；中心保持中性 */
-  function buildMap(w, h, radius, band, bottomOnly, shift) {
+  /* v1.9.40：位移图改用 shuding/liquid-glass 的边缘曲线；
+     折射强度 = 自然尺度 × 0.4（底栏 388×62 约 25px，和用户在模拟器上选的一致） */
+  function buildMap(w, h) {
+    const shuSDF = (x, y, hw, hh, r) => {
+      const qx = Math.abs(x) - hw + r, qy = Math.abs(y) - hh + r;
+      const ax = Math.max(qx, 0), ay = Math.max(qy, 0);
+      return Math.min(Math.max(qx, qy), 0) + Math.sqrt(ax * ax + ay * ay) - r;
+    };
     const cv = document.createElement('canvas');
     cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');
     const img = ctx.createImageData(w, h);
-    const xs = new Float32Array(w * h), ys = new Float32Array(w * h);
-    let maxAbs = 1e-6;
+    const raw = new Float32Array(w * h * 2);
+    let maxAbs = 1e-6, k = 0;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const i = y * w + x;
-        const d = bottomOnly ? (h - y - 0.5) : -sdf(x + 0.5, y + 0.5, w, h, radius);
-        const t = smoothstep(1 - d / band);
-        const dx = (w / 2 - (x + 0.5)) * t;
-        const dy = (h / 2 - (y + 0.5)) * t;
-        xs[i] = dx; ys[i] = dy;
+        const ix = x / w - 0.5, iy = y / h - 0.5;
+        const d = shuSDF(ix, iy, 0.3, 0.2, 0.6);
+        const disp = smoothstep((0.95 - d) / 0.8);
+        const scaled = smoothstep(disp);
+        const dx = (ix * scaled + 0.5) * w - x;
+        const dy = (iy * scaled + 0.5) * h - y;
+        raw[k++] = dx; raw[k++] = dy;
         const a = Math.max(Math.abs(dx), Math.abs(dy));
         if (a > maxAbs) maxAbs = a;
       }
     }
-    for (let i = 0; i < w * h; i++) {
-      const k = i * 4;
-      img.data[k] = Math.round(128 + xs[i] / maxAbs * 127);
-      img.data[k + 1] = Math.round(128 + ys[i] / maxAbs * 127);
-      img.data[k + 2] = img.data[k + 1];
-      img.data[k + 3] = 255;
+    const half = maxAbs * 0.5;
+    for (let j = 0, m = 0; j < w * h; j++) {
+      const r = raw[m++] / half + 0.5;
+      const g = raw[m++] / half + 0.5;
+      const p = j * 4;
+      img.data[p] = Math.round(r * 255);
+      img.data[p + 1] = Math.round(g * 255);
+      img.data[p + 2] = 0;
+      img.data[p + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    return { url: cv.toDataURL('image/png'), shift };
+    return { url: cv.toDataURL('image/png'), scale: half * 0.4 };
   }
   function ensureDefs() {
     if (defs) return defs;
@@ -2485,7 +2496,7 @@ const GlassFX = (() => {
   function setFilter(id, map) {
     const f = defs.querySelector('#' + id);
     f.querySelector('feImage').setAttribute('href', map.url);
-    f.querySelector('feDisplacementMap').setAttribute('scale', map.shift * 2);
+    f.querySelector('feDisplacementMap').setAttribute('scale', map.scale);
   }
   /* v1.9.28 日程/课程日期胶囊：更轻的折射，直接作用在胶囊自身的 backdrop-filter 上 */
   const chipCache = new Map();
@@ -2531,7 +2542,7 @@ const GlassFX = (() => {
         chipCache.set(key, id);
       }
       el.style.boxShadow = 'inset 0 1px 1px rgba(255,255,255,.45)';
-      el.style.backdropFilter = 'url(#' + id + ') blur(3px) saturate(160%) brightness(1.06)';
+      el.style.backdropFilter = 'url(#' + id + ') blur(0.25px) contrast(1.2) brightness(1.05) saturate(1.1)';
       el.style.webkitBackdropFilter = el.style.backdropFilter;
     });
   }
@@ -2556,7 +2567,7 @@ const GlassFX = (() => {
       setFilter(id, buildMap(w, h, 16, 10, false, 6));
       cardCache.set(key, id);
     }
-    el.style.backdropFilter = 'url(#' + id + ') blur(3px) saturate(170%) brightness(1.06)';
+    el.style.backdropFilter = 'url(#' + id + ') blur(0.25px) contrast(1.2) brightness(1.05) saturate(1.1)';
     el.style.webkitBackdropFilter = el.style.backdropFilter;
   }
   function refreshCards() {
@@ -2600,8 +2611,11 @@ const GlassFX = (() => {
       setFilter(id, buildMap(w, h, p.radius, p.band, false, p.shift));
       surfaceCache.set(key, id);
     }
-    el.style.backdropFilter = 'url(#' + id + ') blur(' + p.blur + 'px) saturate(170%) brightness(1.06)';
-    el.style.webkitBackdropFilter = el.style.backdropFilter;
+    var chain = el.closest('#settingsSub')
+      ? 'url(#' + id + ') blur(18px) contrast(1.2) brightness(1.05) saturate(1.1)'
+      : 'url(#' + id + ') blur(0.25px) contrast(1.2) brightness(1.05) saturate(1.1)';
+    el.style.backdropFilter = chain;
+    el.style.webkitBackdropFilter = chain;
   }
   function refreshSurfaces() {
     if (surfaceIO) { surfaceIO.disconnect(); surfaceIO = null; }
