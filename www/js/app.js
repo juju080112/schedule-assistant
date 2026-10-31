@@ -1250,15 +1250,15 @@ function dayLabel(ts) {
 
 function scheduleCard(t, all) {
   const div = document.createElement('div');
-  div.className = 'card-item' + (t.done ? ' done' : '');
   const overdue = t.due && !t.done && t.due < Date.now();
+  div.className = 'card-item' + (t.done ? ' done' : '') + (overdue ? ' overdue' : '');
   const notifyTxt = (t.notifyId || t.courseKey) ? '' : ' · 未设通知';
   div.innerHTML = `
       <button class="chk ${t.done ? 'checked' : ''}">${t.done ? '✓' : ''}</button>
       <div class="body">
         <div class="title">${escapeHtml(t.title)}</div>
         ${t.detail ? `<div class="meta">${escapeHtml(t.detail)}</div>` : ''}
-        ${t.due ? `<div class="meta" style="color:#000">⏰ ${fmtDate(t.due)}${overdue ? '（已过时）' : ''}${t.done ? '' : notifyTxt}</div>` : ''}
+        ${t.due ? `<div class="meta">⏰ ${fmtDate(t.due)}${overdue ? '（已过时）' : ''}${t.done ? '' : notifyTxt}</div>` : ''}
       </div>
       <button class="del">✕</button>`;
   div.querySelector('.chk').onclick = async () => {
